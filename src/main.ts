@@ -19,11 +19,13 @@ import {
   LoaderCircle,
   Copy,
   CheckCheck,
+  CloudRain,
 } from "lucide";
 import type { ConversionResult, Mode, Options } from "./core/types";
 import type { Job } from "./worker";
 import { drawPreview, formatNumber, summarize } from "./preview";
 import { sampleDxf, samplePoints, sampleValues } from "./sample";
+import { mountRainfall } from "./rainfall-ui";
 import "./style.css";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -47,6 +49,7 @@ const icons = {
   LoaderCircle,
   Copy,
   CheckCheck,
+  CloudRain,
 };
 const icon = (name: string) =>
   `<i data-lucide="${name}" aria-hidden="true"></i>`;
@@ -108,15 +111,16 @@ app.innerHTML = `
   </header>
   <div class="workspace">
     <aside class="sidebar">
-      <div class="sidebar-label">转换工具 <span>03</span></div>
+      <div class="sidebar-label">转换工具 <span>04</span></div>
       <nav role="tablist" aria-label="转换功能">
         <button role="tab" aria-selected="true" data-mode="boundary" class="nav-item active">${icon("scan-line")}<span>边界转换<small>DXF → XYZ</small></span>${icon("arrow-right")}</button>
         <button role="tab" aria-selected="false" data-mode="points" class="nav-item">${icon("map-pin")}<span>地形点转换<small>TXT / CSV → XYZ</small></span>${icon("arrow-right")}</button>
         <button role="tab" aria-selected="false" data-mode="assign" class="nav-item">${icon("layers")}<span>分区赋值<small>区域参数 → XYZ</small></span>${icon("arrow-right")}</button>
+        <button role="tab" aria-selected="false" id="rain-tab" class="nav-item">${icon("cloud-rain")}<span>降雨序列<small>DAT / TXT → CSV</small></span>${icon("arrow-right")}</button>
       </nav>
       <div class="side-bottom"><span class="status-dot"></span>浏览器计算<span class="version">v1.0.0</span></div>
     </aside>
-    <main>
+    <main id="spatial-main">
       <div class="page-title"><div><div class="breadcrumb">工作空间 <span>/</span> <span id="breadcrumb">边界转换</span></div><h1 id="mode-title">边界转换</h1><p id="mode-subtitle">闭合多段线 · 五列边界文件</p></div><button class="button secondary" id="load-example">${icon("file-input")}<span>载入示例</span></button></div>
       <section class="coordinate-bar" aria-label="坐标设置"><div class="coordinate-label">${icon("map")}<span>目标坐标</span></div><span class="datum">CGCS2000</span><label class="select-label" for="zone">三度分带<select id="zone" aria-label="三度分带">${Array.from({ length: 21 }, (_, i) => `<option value="${i + 25}" ${i + 25 === 37 ? "selected" : ""}>${i + 25} 带</option>`).join("")}</select></label><span class="coordinate-meta" id="zone-meta">中央经线 111°E <span>·</span> EPSG:4525</span><span class="coordinate-note">仅补带号</span></section>
       <div class="editor-grid">
@@ -173,7 +177,9 @@ function renderInputs() {
     mode === "boundary"
       ? `<div class="setting-row"><label for="boundary-select">边界轮廓</label><select id="boundary-select"><option value="">自动选择（顶点最多）</option></select></div><div class="setting-row"><label for="spacing">最大采样间距 <small>m</small></label><input id="spacing" type="number" min="0.001" step="any" placeholder="保留原顶点"/></div>`
       : `<div class="setting-row"><label for="column-mode">点文件列序</label><select id="column-mode"><option value="auto">自动识别</option><option value="custom">自定义列号</option></select></div><div class="column-fields" id="columns" hidden><label>X 列<input type="number" min="1" value="1" id="column-x"/></label><label>Y 列<input type="number" min="1" value="2" id="column-y"/></label><label>Z 列<input type="number" min="1" value="3" id="column-z"/></label></div>${mode === "points" ? '<div class="setting-row"><label class="checkbox-label"><input type="checkbox" id="filter-enabled"/>过滤低值点</label><div class="number-unit"><span>Z &lt;</span><input id="min-z" type="number" step="any" placeholder="高程阈值" disabled/><span>m</span></div></div>' : '<div class="assignment-rule"><span>优先级</span><strong>TXT 首行最高 · 末行值作默认</strong></div>'}`;
-  for (const label of document.querySelectorAll<HTMLElement>(".file-drop")) {
+  for (const label of document.querySelectorAll<HTMLElement>(
+    "#file-fields .file-drop",
+  )) {
     const key = label.dataset.key as keyof Job["files"];
     label.querySelector("input")!.addEventListener("change", (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
@@ -577,10 +583,12 @@ $("#mode-settings").addEventListener("input", () => invalidate());
 $("#mode-settings").addEventListener("change", () => invalidate());
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-mode]"))
   tab.addEventListener("click", () => {
-    if (busy) return;
+    if (busy || rain.isBusy()) return;
+    rainMain.hidden = true;
+    $("#spatial-main").hidden = false;
     stopWorker();
     mode = tab.dataset.mode as Mode;
-    for (const item of document.querySelectorAll("[data-mode]")) {
+    for (const item of document.querySelectorAll('[role="tab"]')) {
       const active = item === tab;
       item.setAttribute("aria-selected", String(active));
       item.classList.toggle("active", active);
@@ -635,4 +643,21 @@ new ResizeObserver(() => {
   else clearCanvas();
 }).observe($("#result-preview"));
 renderInputs();
+const rainMain = document.createElement("main");
+rainMain.id = "rain-main";
+rainMain.hidden = true;
+$(".workspace").append(rainMain);
+const rain = mountRainfall(rainMain);
+$("#rain-tab").addEventListener("click", () => {
+  if (busy || rain.isBusy()) return;
+  stopWorker();
+  $("#spatial-main").hidden = true;
+  rainMain.hidden = false;
+  for (const tab of document.querySelectorAll('[role="tab"]')) {
+    const active = tab.id === "rain-tab";
+    tab.setAttribute("aria-selected", String(active));
+    tab.classList.toggle("active", active);
+  }
+  rain.redraw();
+});
 refreshIcons();

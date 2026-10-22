@@ -986,7 +986,7 @@ pre {
   }
   nav {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
   }
   .nav-item {
@@ -1246,5 +1246,68 @@ pre {
   * {
     animation: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.rain-import {
+  border-top: 1px solid var(--border);
+  margin-top: 28px;
+  padding: 22px 0 32px;
+}
+.formula-equation {
+  font: 12px/1.6 monospace;
+  overflow-wrap: anywhere;
+  padding: 12px 0;
+  color: var(--green);
+}
+.rain-import a {
+  font-size: 12px;
+  color: var(--green);
+  margin-left: auto;
+}
+.rain-import pre,
+.rain-output-preview {
+  font: 12px/1.7 monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.rain-output-preview {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+#rain-settings input[type="datetime-local"] {
+  width: 235px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font: inherit;
+  background: white;
+  color: inherit;
+}
+#rain-main .preview-section {
+  align-self: start;
+}
+#rain-main .setting-row {
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .sidebar nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #rain-settings .setting-row {
+    flex-wrap: wrap;
+  }
+  #rain-settings .setting-row > select,
+  #rain-settings .setting-row > input {
+    max-width: 100%;
+  }
+  #rain-main .output-row {
+    flex-wrap: wrap;
+  }
+  #rain-main .output-field {
+    width: 100%;
   }
 }
