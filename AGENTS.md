@@ -16,4 +16,3 @@ layer value; any open polyline in a target layer aborts area assignment.
 Write meaningful tests before behaviour changes. Run npm run check and
 npm run test:browser. Check desktop/mobile layouts and actual downloads.
 Do not commit project CAD/terrain data, secrets, node_modules or dist.
-
