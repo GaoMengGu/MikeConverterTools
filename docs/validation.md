@@ -17,6 +17,7 @@
 
 GitHub Ubuntu CI 使用运行镜像预装的 Chrome，通过 `PLAYWRIGHT_CHANNEL=chrome`
 运行同一套测试，避免在每次发布时从 Ubuntu 软件源重装系统依赖。
+浏览器测试默认先构建，再通过 4174 端口检查生产包；开发服务可独立运行。
 
 ```bash
 npm ci

@@ -6,14 +6,14 @@ export default defineConfig({
   reporter: "list",
   use: {
     channel: process.env.PLAYWRIGHT_CHANNEL,
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173/",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4174/",
     trace: "retain-on-failure",
   },
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "npm run dev -- --port 4173 --strictPort",
-        url: "http://127.0.0.1:4173",
+        command: "npm run build && npm run preview -- --port 4174 --strictPort",
+        url: "http://127.0.0.1:4174",
         reuseExistingServer: !process.env.CI,
       },
   projects: [
