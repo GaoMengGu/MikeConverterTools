@@ -15,6 +15,9 @@
 
 ## 可重复检查
 
+GitHub Ubuntu CI 使用运行镜像预装的 Chrome，通过 `PLAYWRIGHT_CHANNEL=chrome`
+运行同一套测试，避免在每次发布时从 Ubuntu 软件源重装系统依赖。
+
 ```bash
 npm ci
 npm run check
