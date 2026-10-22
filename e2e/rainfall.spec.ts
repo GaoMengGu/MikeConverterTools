@@ -13,6 +13,69 @@ test.beforeEach(async ({ page }) => {
   await page.goto("./");
   await page.getByRole("tab", { name: /降雨序列/ }).click();
 });
+
+test("editable fraction keeps formula terms, units and validation consistent", async ({
+  page,
+}, info) => {
+  await page.locator("#rain-source").selectOption("formula");
+  const equation = page.getByRole("group", {
+    name: "暴雨强度公式",
+    exact: true,
+  });
+  await expect(
+    equation.getByRole("spinbutton", { name: "系数 A", exact: true }),
+  ).toHaveValue("");
+  await expect(
+    equation.getByRole("spinbutton", { name: "指数 n", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "开始转换", exact: true }).click();
+  await expect(page.locator("#rain-error")).toContainText("系数 A");
+  for (const [id, value] of Object.entries({
+    a: "9.5981",
+    c: "0.846",
+    b: "7",
+    n: "0.656",
+    p: "2",
+    duration: "120",
+    r: "0.4",
+    step: "60",
+  }))
+    await page.locator(`#chicago-${id}`).fill(value);
+  await page.locator("#chicago-unit").selectOption("mmmin");
+  await expect(page.locator("#chicago-symbol")).toHaveText("i");
+  await expect(page.locator("#chicago-equation-unit")).toHaveText("mm/min");
+  await page.getByRole("button", { name: "开始转换", exact: true }).click();
+  await expect(page.locator("#rain-result-state")).toHaveText("转换完成");
+  const total = (9.5981 * (1 + 0.846 * Math.log10(2)) * 120) / 127 ** 0.656;
+  await expect(page.locator("#rain-total")).toHaveText(
+    `${total.toLocaleString("en-US", { maximumFractionDigits: 6 })} mm`,
+  );
+  const numerator = await equation.locator(".formula-numerator").boundingBox();
+  const denominator = await equation
+    .locator(".formula-denominator")
+    .boundingBox();
+  expect(numerator!.y + numerator!.height).toBeLessThanOrEqual(denominator!.y);
+  const exponent = await page.locator("#chicago-n").boundingBox();
+  const base = await page.locator("#chicago-b").boundingBox();
+  expect(exponent!.y).toBeLessThan(base!.y);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await equation.screenshot({ path: info.outputPath("formula-fraction.png") });
+  await page.locator("#chicago-unit").selectOption("lsha");
+  await expect(page.locator("#chicago-symbol")).toHaveText("q");
+  await expect(page.locator("#chicago-equation-unit")).toHaveText("L/(s·ha)");
+  await page.locator("#chicago-formula").selectOption("direct");
+  await expect(page.locator("#chicago-c")).toBeHidden();
+  await expect(page.locator("#chicago-p")).toBeHidden();
+  await expect(page.locator("#chicago-a")).toHaveValue("9.5981");
+  await page.getByRole("button", { name: "开始转换", exact: true }).click();
+  await expect(page.locator("#rain-result-state")).toHaveText("转换完成");
+  await page.locator("#chicago-formula").selectOption("return-period");
+  await expect(page.locator("#chicago-c")).toHaveValue("0.846");
+});
 test("Chicago templates require parameters and generate conserved mean rates", async ({
   page,
 }, info) => {

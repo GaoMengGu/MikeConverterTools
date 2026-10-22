@@ -6,7 +6,7 @@ export interface ChicagoParameters {
   c?: number;
   b: number;
   n: number;
-  unit: "mmh" | "lsha";
+  unit: "mmh" | "mmmin" | "lsha";
   returnPeriod?: number;
   durationMinutes: number;
   peakRatio: number;
@@ -34,8 +34,8 @@ export function generateChicago(
 ): RainResult {
   if (!formulaTemplates.some((f) => f.id === p.formula))
     throw new Error("不支持的公式形式，请选择已有模板并核对原公式。");
-  if (!["mmh", "lsha"].includes(p.unit))
-    throw new Error("公式输出单位须为 mm/h 或 L/(s·ha)。");
+  if (!["mmh", "mmmin", "lsha"].includes(p.unit))
+    throw new Error("公式输出单位须为 mm/h、mm/min 或 L/(s·ha)。");
   for (const [name, v] of Object.entries({
     A: p.a,
     b: p.b,
@@ -75,7 +75,7 @@ export function generateChicago(
       throw new Error("请填写 C ≥ 0 和重现期 P > 0（年）。");
     coefficient *= 1 + p.c! * Math.log10(p.returnPeriod!);
   }
-  coefficient *= p.unit === "lsha" ? 0.36 : 1;
+  coefficient *= p.unit === "lsha" ? 0.36 : p.unit === "mmmin" ? 60 : 1;
   if (!Number.isFinite(coefficient) || coefficient <= 0)
     throw new Error("所选重现期下的公式系数须为有限正数。");
   const depth = (t: number) => (coefficient * t) / (t + p.b) ** p.n / 60;

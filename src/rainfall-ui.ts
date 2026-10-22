@@ -35,16 +35,27 @@ export function mountRainfall(root: HTMLElement) {
           <div class="setting-row"><label for="rain-source">序列来源</label><select id="rain-source"><option value="file">已有降雨文件</option><option value="formula">暴雨公式 · 芝加哥雨型</option></select></div>
           <div id="chicago-settings" hidden>
             <div class="setting-row"><label for="chicago-formula">公式模板</label><select id="chicago-formula">${formulaTemplates.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}</select></div>
-            <p class="formula-equation" id="chicago-equation">${formulaTemplates[0].equation}</p>
-            <div class="setting-row"><label for="chicago-unit">公式输出单位</label><select id="chicago-unit"><option value="mmh">mm/h</option><option value="lsha">L/(s·ha)</option></select></div>
-            <div class="setting-row"><label for="chicago-a">A / Aₚ</label><input id="chicago-a" type="number" step="any" placeholder="填写原公式系数"/></div>
-            <div class="setting-row" id="chicago-c-row"><label for="chicago-c">C</label><input id="chicago-c" type="number" step="any" placeholder="填写重现期系数"/></div>
-            <div class="setting-row"><label for="chicago-b">b · min</label><input id="chicago-b" type="number" step="any" placeholder="填写历时修正参数"/></div>
-            <div class="setting-row"><label for="chicago-n">n</label><input id="chicago-n" type="number" step="any" placeholder="0 &lt; n ≤ 1"/></div>
+            <div class="setting-row"><label for="chicago-unit">公式输出单位</label><select id="chicago-unit"><option value="mmh">mm/h</option><option value="mmmin">mm/min</option><option value="lsha">L/(s·ha)</option></select></div>
+            <fieldset class="formula-editor" id="chicago-equation" aria-label="暴雨强度公式">
+              <legend>暴雨强度公式</legend>
+              <div class="formula-expression">
+                <span class="formula-symbol" id="chicago-symbol">i</span><span>=</span>
+                <div class="formula-fraction">
+                  <div class="formula-numerator">
+                    <input class="formula-coefficient" id="chicago-a" type="number" step="any" placeholder="A" aria-label="系数 A" title="系数 A / Aₚ"/>
+                    <span class="formula-period" id="chicago-c-row"><span>(1 +</span><input class="formula-coefficient" id="chicago-c" type="number" step="any" placeholder="C" aria-label="重现期系数 C" title="重现期系数 C"/><span>lg P)</span></span>
+                  </div>
+                  <div class="formula-denominator"><span class="formula-base"><span>(t +</span><input id="chicago-b" type="number" step="any" placeholder="b" aria-label="历时修正参数 b，分钟" title="历时修正参数 b · min"/><span>)</span></span><sup><input id="chicago-n" type="number" step="any" placeholder="n" aria-label="指数 n" title="指数 n，0 < n ≤ 1"/></sup></div>
+                </div>
+              </div>
+              <div class="formula-units"><span id="chicago-equation-unit">mm/h</span><span>t、b：min · lg：以 10 为底</span></div>
+            </fieldset>
+            <div class="chicago-parameters">
             <div class="setting-row" id="chicago-p-row"><label for="chicago-p">重现期 P · 年</label><input id="chicago-p" type="number" step="any" placeholder="填写设计重现期"/></div>
             <div class="setting-row"><label for="chicago-duration">降雨历时 · min</label><input id="chicago-duration" type="number" step="any" placeholder="填写总历时"/></div>
             <div class="setting-row"><label for="chicago-r">雨峰系数 r</label><input id="chicago-r" type="number" step="any" placeholder="0 &lt; r &lt; 1"/></div>
             <div class="setting-row"><label for="chicago-step">采样步长 · s</label><input id="chicago-step" type="number" step="1" placeholder="须能整除总历时"/></div>
+            </div>
             <div class="setting-row"><label for="chicago-reference">公式来源 / 版本</label><input id="chicago-reference" type="text" placeholder="选填，可追溯来源"/></div>
             <div class="assignment-rule"><span>数据值类型</span><strong>时段平均 · MeanStepBackward</strong></div>
           </div>
@@ -184,10 +195,15 @@ export function mountRainfall(root: HTMLElement) {
       $(id).closest<HTMLElement>(".setting-row")!.hidden = formula;
     $("chicago-c-row").hidden = value("chicago-formula") === "direct";
     $("chicago-p-row").hidden = value("chicago-formula") === "direct";
+    text("chicago-symbol", value("chicago-unit") === "lsha" ? "q" : "i");
     text(
-      "chicago-equation",
-      formulaTemplates.find((f) => f.id === value("chicago-formula"))!.equation,
+      "chicago-equation-unit",
+      { mmh: "mm/h", mmmin: "mm/min", lsha: "L/(s·ha)" }[
+        value("chicago-unit")
+      ]!,
     );
+    $<HTMLInputElement>("chicago-a").placeholder =
+      value("chicago-formula") === "direct" ? "Aₚ" : "A";
     $("rain-elapsed-row").hidden = value("rain-time-mode") !== "elapsed";
     $("rain-start-row").hidden = value("rain-time-mode") === "absolute";
     $("rain-interval-row").hidden = value("rain-time-mode") !== "index";
@@ -348,7 +364,7 @@ export function mountRainfall(root: HTMLElement) {
         const required = (id: string) => {
           if (!value(id).trim())
             throw new Error(
-              `请填写${$(id).closest(".setting-row")!.querySelector("label")!.textContent}。`,
+              `请填写${$(id).getAttribute("aria-label") ?? $(id).closest(".setting-row")!.querySelector("label")!.textContent}。`,
             );
           return Number(value(id));
         };

@@ -14,6 +14,16 @@ const settings = {
   stepSeconds: 60,
 };
 describe("Chicago hyetograph", () => {
+  it("converts a formula expressed in mm/min without changing its coefficients", () => {
+    const perMinute = chicago.generateChicago({ ...settings, unit: "mmmin" });
+    const perHour = chicago.generateChicago({
+      ...settings,
+      a: settings.a * 60,
+    });
+    expect(perMinute.stats.totalMM).toBeCloseTo(perHour.stats.totalMM, 9);
+    expect(perMinute.content).toBe(perHour.content);
+    expect(perMinute.generation?.parameters.unit).toBe("mmmin");
+  });
   it("accepts integral-second durations affected by floating point multiplication", () => {
     expect(
       chicago.generateChicago({
