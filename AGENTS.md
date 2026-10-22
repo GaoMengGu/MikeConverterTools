@@ -2,6 +2,9 @@
 
 Browser-only converter for MIKE modelling inputs. Never upload user files or
 introduce external analytics. GitHub Pages serves the built static site.
+Keep repository content limited to this Pages application, its usage rules,
+tests and deployment configuration. Do not add platform development guides,
+desktop tools, migration journals or unrelated project documents.
 
 Use TypeScript for one shared conversion core, called by a Web Worker. Keep
 the UI responsive and support cancellation by terminating the worker.

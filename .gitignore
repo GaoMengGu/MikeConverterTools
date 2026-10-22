@@ -5,3 +5,17 @@ test-results/
 playwright-report/
 *.local
 .DS_Store
+/work/
+/data/
+/downloads/
+__pycache__/
+*.pyc
+*.exe
+*.msi
+*.dwg
+*.dxf
+*.xyz
+*.mesh
+*.dfs0
+*.dfs2
+*.dfsu

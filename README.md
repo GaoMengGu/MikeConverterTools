@@ -103,39 +103,15 @@ TXT 涉及的目标图层中只要有开口多段线，立即报错，其他图�
 - 预览点最多约 6,000 个；坐标和统计范围依据完整输出。
 - 内存中处理整个文件，大文件请先试小样本，必要时拆分。
 
-## Ubuntu / 本地开发
-
-需要 Node.js 24 和 npm。无需 Python、C3D、MIKE 或 .NET。
-
-```bash
-git clone https://github.com/GaoMengGu/MikeConverterTools.git
-cd MikeConverterTools
-npm ci
-npm run dev
-```
-
-终端显示本地访问地址。可使用 Codex CLI 在该目录开发；先阅读 `AGENTS.md`。
-项目不包含实际工程图纸或测点，测试仅用合成数据。
-
-```bash
-npm run check
-npx playwright install --with-deps chromium
-npm run test:browser
-npm run build
-npm run preview
-```
-
-`npm run check` 包含 Vitest 和 TypeScript/生产构建，浏览器测试覆盖桌面、移动、
-下载、错误恢复及 Canvas 像素。Node 与浏览器调用同一套核心函数，避免双重实现。
-
 ## GitHub Pages
 
 仓库 Settings → Pages → Build and deployment → Source 设置为 **GitHub Actions**。
 推送 main 会运行测试、构建、浏览器验收，通过后部署 `dist`。相对资源路径支持
 `/MikeConverterTools/` 项目路径，无需服务器路由或 API 密钥。
 
-依赖静态打包，不运行 Python 后端，不利用 GitHub Actions 处理用户上传文件。
-GitHub 仓库包含源码和测试，不应提交实际工程数据、下载结果或凭据。
+Pages 仅发布静态页面和资源，转换在浏览器内执行。GitHub Actions 只负责测试、
+构建与部署，不处理用户输入文件。仓库仅维护此网页方案的源码、测试、依赖配置、
+使用说明和部署配置，不收录桌面程序、其他平台开发指南、工程数据或下载结果。
 
 ## 目录
 
@@ -147,9 +123,8 @@ src/preview.ts  真实几何预览
 tests/          核心验收
 e2e/            浏览器验收
 .github/        CI 和部署
-docs/           设计及迁移说明
+docs/           浏览器转换与 Pages 验收说明
 ```
 
-原 Windows / Python 工具仍保留在原工作目录，便于回溯。网页端继承已确定的
-五列格式、默认 37 带、低值过滤和分区优先级规则；主动拒绝圆弧及自交，避免
-旧版“只读顶点直连”产生错误范围。以实际 MIKE 导入与工程几何校核作为最终验收。
+测试使用合成点线数据。浏览器转换与文本输出已验收，具体项目仍需在 MIKE 中
+核对边界、坐标范围、点数与高程，详见 [验收说明](docs/validation.md)。
