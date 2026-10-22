@@ -1,0 +1,31 @@
+{
+  "name": "mike-converter-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "check": "npm run test && npm run build"
+  },
+  "dependencies": {
+    "dxf-parser": "^1.1.2",
+    "lucide": "^1.61.0",
+    "rbush": "^4.0.1",
+    "robust-point-in-polygon": "^1.0.3",
+    "robust-predicates": "^3.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/rbush": "^4.0.0",
+    "@types/robust-point-in-polygon": "^1.0.4",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
