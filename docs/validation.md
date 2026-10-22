@@ -32,6 +32,16 @@ npm run test:browser
 PLAYWRIGHT_BASE_URL=https://gaomenggu.github.io/MikeConverterTools/ npm run test:browser
 ```
 
+## 线上验收
+
+- [GitHub Actions 首次成功部署](https://github.com/GaoMengGu/MikeConverterTools/actions/runs/39790352575)：
+  Ubuntu 上核心测试、构建、16 项 Chrome 浏览器测试及 Pages 部署均通过。
+- 对 [正式网址](https://gaomenggu.github.io/MikeConverterTools/) 再执行同一套 16 项测试，
+  全部通过；确认项目子路径、生产 Worker、文件下载及桌面/手机预览可用。
+- 早期部署两次未完成：一次取消了软件源下载过慢的系统依赖安装；一次开发服务
+  依赖重优化触发页面刷新使首个文件选择丢失。最终改为预装 Chrome、生产包验收，
+  并预声明 Worker 开发依赖，已通过上述本地和线上检查。
+
 ## 验收范围
 
 本次验证覆盖浏览器转换与文本输出，不包含 MIKE 2024 桌面软件实际导入试验。
