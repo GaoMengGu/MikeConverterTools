@@ -27,6 +27,7 @@ import { drawPreview, formatNumber, summarize } from "./preview";
 import { sampleDxf, samplePoints, sampleValues } from "./sample";
 import { mountRainfall } from "./rainfall-ui";
 import "./style.css";
+import { mountShapefile } from "./shapefile-ui";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const icons = {
@@ -111,12 +112,13 @@ app.innerHTML = `
   </header>
   <div class="workspace">
     <aside class="sidebar">
-      <div class="sidebar-label">转换工具 <span>04</span></div>
+      <div class="sidebar-label">转换工具 <span>05</span></div>
       <nav role="tablist" aria-label="转换功能">
         <button role="tab" aria-selected="true" data-mode="boundary" class="nav-item active">${icon("scan-line")}<span>边界转换<small>DXF → XYZ</small></span>${icon("arrow-right")}</button>
         <button role="tab" aria-selected="false" data-mode="points" class="nav-item">${icon("map-pin")}<span>地形点转换<small>TXT / CSV → XYZ</small></span>${icon("arrow-right")}</button>
         <button role="tab" aria-selected="false" data-mode="assign" class="nav-item">${icon("layers")}<span>分区赋值<small>区域参数 → XYZ</small></span>${icon("arrow-right")}</button>
         <button role="tab" aria-selected="false" id="rain-tab" class="nav-item">${icon("cloud-rain")}<span>降雨序列<small>DAT / TXT → CSV</small></span>${icon("arrow-right")}</button>
+        <button role="tab" aria-selected="false" id="shp-tab" class="nav-item">${icon("map")}<span>DXF 转 SHP<small>CAD → Shapefile</small></span>${icon("arrow-right")}</button>
       </nav>
       <div class="side-bottom"><span class="status-dot"></span>浏览器计算<span class="version">v1.0.0</span></div>
     </aside>
@@ -583,8 +585,9 @@ $("#mode-settings").addEventListener("input", () => invalidate());
 $("#mode-settings").addEventListener("change", () => invalidate());
 for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-mode]"))
   tab.addEventListener("click", () => {
-    if (busy || rain.isBusy()) return;
+    if (busy || rain.isBusy() || shp.isBusy()) return;
     rainMain.hidden = true;
+    shpMain.hidden = true;
     $("#spatial-main").hidden = false;
     stopWorker();
     mode = tab.dataset.mode as Mode;
@@ -649,10 +652,11 @@ rainMain.hidden = true;
 $(".workspace").append(rainMain);
 const rain = mountRainfall(rainMain);
 $("#rain-tab").addEventListener("click", () => {
-  if (busy || rain.isBusy()) return;
+  if (busy || rain.isBusy() || shp.isBusy()) return;
   stopWorker();
   $("#spatial-main").hidden = true;
   rainMain.hidden = false;
+  shpMain.hidden = true;
   for (const tab of document.querySelectorAll('[role="tab"]')) {
     const active = tab.id === "rain-tab";
     tab.setAttribute("aria-selected", String(active));
@@ -661,3 +665,21 @@ $("#rain-tab").addEventListener("click", () => {
   rain.redraw();
 });
 refreshIcons();
+
+const shpMain = document.createElement("main");
+shpMain.id = "shp-main";
+shpMain.hidden = true;
+$(".workspace").append(shpMain);
+const shp = mountShapefile(shpMain);
+$("#shp-tab").addEventListener("click", () => {
+  if (busy || rain.isBusy() || shp.isBusy()) return;
+  stopWorker();
+  $("#spatial-main").hidden = true;
+  rainMain.hidden = true;
+  shpMain.hidden = false;
+  for (const tab of document.querySelectorAll('[role="tab"]')) {
+    const active = tab.id === "shp-tab";
+    tab.setAttribute("aria-selected", String(active));
+    tab.classList.toggle("active", active);
+  }
+});

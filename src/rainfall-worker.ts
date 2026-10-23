@@ -2,7 +2,11 @@
 import { convertRainfall, type RainOptions } from "./core/rainfall";
 import { generateChicago, type ChicagoParameters } from "./core/chicago";
 
+import { generateCityChicago } from "./core/city-formulas";
+
 export interface RainJob {
+  cityFormulaId?: string;
+  cityReturnPeriod?: number;
   file?: File;
   chicago?: ChicagoParameters;
   options: RainOptions;
@@ -13,7 +17,13 @@ self.onmessage = async ({ data: job }: MessageEvent<RainJob>) => {
     if (job.chicago) {
       self.postMessage({
         type: "result",
-        data: generateChicago(job.chicago, job.options),
+        data: job.cityFormulaId
+          ? generateCityChicago(
+              job.cityFormulaId,
+              { ...job.chicago, returnPeriod: job.cityReturnPeriod },
+              job.options,
+            )
+          : generateChicago(job.chicago, job.options),
       });
       return;
     }

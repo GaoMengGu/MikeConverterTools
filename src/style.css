@@ -1416,3 +1416,30 @@ pre {
     width: 100%;
   }
 }
+.tool-note {
+  color: var(--muted, #596c60);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  margin: 12px 0;
+}
+.tool-note p {
+  margin: 8px 0;
+}
+.tool-note a {
+  color: #0e6e50;
+  text-decoration: underline;
+}
+.tool-note summary {
+  cursor: pointer;
+  padding: 10px 0;
+}
+.setting-row textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d6e1da;
+  border-radius: 6px;
+  padding: 10px;
+  font: inherit;
+  resize: vertical;
+}

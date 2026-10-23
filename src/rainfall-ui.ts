@@ -12,6 +12,12 @@ import type { RainOptions, RainResult } from "./core/rainfall";
 import type { RainJob } from "./rainfall-worker";
 import { formulaTemplates, type ChicagoParameters } from "./core/chicago";
 
+import {
+  cityFormulas,
+  formulaFollowups,
+  resolveCityFormula,
+} from "./core/city-formulas";
+
 const sample = "时间(hh:mm) 雨强(mm/h)\n00:00 0\n00:01 60\n00:02 0\n";
 const icons = {
   FileInput,
@@ -34,6 +40,9 @@ export function mountRainfall(root: HTMLElement) {
         <div class="settings"><div class="settings-title">转换参数</div><div id="rain-settings">
           <div class="setting-row"><label for="rain-source">序列来源</label><select id="rain-source"><option value="file">已有降雨文件</option><option value="formula">暴雨公式 · 芝加哥雨型</option></select></div>
           <div id="chicago-settings" hidden>
+            <div class="setting-row"><label for="city-formula">城市 / 分区公式</label><select id="city-formula"><option value="manual">手动填写公式</option></select></div>
+            <div id="city-evidence" class="tool-note" hidden></div>
+            <details class="tool-note"><summary>官方来源核实进度与未启用城市</summary><p>首批分区条目已核对发布原文；核实日期不等于保证实时最新。</p><div id="city-followups"></div></details>
             <div class="setting-row"><label for="chicago-formula">公式模板</label><select id="chicago-formula">${formulaTemplates.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}</select></div>
             <div class="setting-row"><label for="chicago-unit">公式输出单位</label><select id="chicago-unit"><option value="mmh">mm/h</option><option value="mmmin">mm/min</option><option value="lsha">L/(s·ha)</option></select></div>
             <fieldset class="formula-editor" id="chicago-equation" aria-label="暴雨强度公式">
@@ -84,6 +93,22 @@ export function mountRainfall(root: HTMLElement) {
   createIcons({ icons, root });
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
     root.querySelector<T>(`#${id}`)!;
+  for (const f of cityFormulas) {
+    const o = document.createElement("option");
+    o.value = f.id;
+    o.textContent = f.city + " · " + f.label + " · " + f.source.version;
+    $("city-formula").append(o);
+  }
+  for (const f of formulaFollowups) {
+    const p = document.createElement("p"),
+      a = document.createElement("a");
+    a.href = f.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = f.city;
+    p.append(a, document.createTextNode("：" + f.note));
+    $("city-followups").append(p);
+  }
   let file: File | undefined,
     result: RainResult | undefined,
     worker: Worker | undefined,
@@ -142,6 +167,7 @@ export function mountRainfall(root: HTMLElement) {
     ))
       el.disabled = state;
     $("rain-cancel").hidden = !state;
+    presetLocks();
     ready();
   }
   function stop() {
@@ -181,6 +207,94 @@ export function mountRainfall(root: HTMLElement) {
       delimiter: value("rain-delimiter") as RainOptions["delimiter"],
     };
   }
+  function preset() {
+    return cityFormulas.find((f) => f.id === value("city-formula"));
+  }
+  function presetLocks() {
+    const active = !!preset();
+    for (const id of [
+      "chicago-a",
+      "chicago-b",
+      "chicago-c",
+      "chicago-n",
+      "chicago-unit",
+      "chicago-formula",
+      "chicago-reference",
+    ])
+      $<HTMLInputElement>(id).disabled = busy || active;
+  }
+  function syncPreset() {
+    const f = preset();
+    $("city-evidence").hidden = !f;
+    if (!f) {
+      $<HTMLInputElement>("chicago-reference").value = "";
+      presetLocks();
+      return;
+    }
+    $("city-evidence").replaceChildren();
+    const add = (s: string) => {
+      const p = document.createElement("p");
+      p.textContent = s;
+      $("city-evidence").append(p);
+    };
+    add(
+      f.city +
+        " · " +
+        f.label +
+        " | " +
+        f.source.version +
+        " | 发布 " +
+        f.source.published +
+        " | 核实 " +
+        f.source.checked,
+    );
+    add("适用地域：" + f.scope);
+    add(
+      "收录历时：" +
+        (f.duration
+          ? f.duration.join("–") + " min"
+          : "原文条款未明确，使用前核实") +
+        "；重现期：" +
+        f.periods.join(f.discrete ? "、" : "–") +
+        " 年",
+    );
+    add(f.note);
+    for (const [label, url] of [
+      ["官方发布原文", f.source.url],
+      ["官方附件", f.source.attachment],
+    ])
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.textContent = label + " ↗ ";
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        $("city-evidence").append(a);
+      }
+    const period = Number(value("chicago-p"));
+    const validPeriod = f.discrete
+      ? f.periods.includes(period)
+      : period >= f.periods[0] && period <= f.periods[1];
+    const p = resolveCityFormula(
+      f.id,
+      validPeriod ? period : f.periods[0],
+      f.duration?.[0] ?? 60,
+    );
+    for (const [id, v] of Object.entries({
+      a: p.a,
+      b: p.b,
+      c: p.c ?? "",
+      n: p.n,
+      unit: p.unit,
+      formula: p.formula,
+      reference: p.source ?? "",
+    }))
+      $<HTMLInputElement>("chicago-" + id).value = String(v);
+    if (f.discrete && !validPeriod)
+      for (const id of ["a", "b", "n"])
+        $<HTMLInputElement>("chicago-" + id).value = "";
+    presetLocks();
+  }
   function settingsVisibility() {
     const formula = value("rain-source") === "formula";
     $("chicago-settings").hidden = !formula;
@@ -194,7 +308,8 @@ export function mountRainfall(root: HTMLElement) {
     ])
       $(id).closest<HTMLElement>(".setting-row")!.hidden = formula;
     $("chicago-c-row").hidden = value("chicago-formula") === "direct";
-    $("chicago-p-row").hidden = value("chicago-formula") === "direct";
+    $("chicago-p-row").hidden =
+      value("chicago-formula") === "direct" && !preset();
     text("chicago-symbol", value("chicago-unit") === "lsha" ? "q" : "i");
     text(
       "chicago-equation-unit",
@@ -332,12 +447,16 @@ export function mountRainfall(root: HTMLElement) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
-  $("rain-settings").addEventListener("input", () => {
+  $("rain-settings").addEventListener("input", (e) => {
     clear();
+    if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
+      syncPreset();
     settingsVisibility();
   });
-  $("rain-settings").addEventListener("change", () => {
+  $("rain-settings").addEventListener("change", (e) => {
     clear();
+    if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
+      syncPreset();
     settingsVisibility();
   });
   $("rain-file").addEventListener("change", () => {
@@ -368,6 +487,13 @@ export function mountRainfall(root: HTMLElement) {
             );
           return Number(value(id));
         };
+        const selected = preset();
+        if (selected)
+          resolveCityFormula(
+            selected.id,
+            required("chicago-p"),
+            required("chicago-duration"),
+          );
         const full = value("chicago-formula") === "return-period";
         lastChicago = {
           formula: value("chicago-formula") as ChicagoParameters["formula"],
@@ -411,6 +537,8 @@ export function mountRainfall(root: HTMLElement) {
         error("降雨转换线程异常，请重试或缩小文件。");
       };
       current.postMessage({
+        cityFormulaId: preset()?.id,
+        cityReturnPeriod: preset() ? Number(value("chicago-p")) : undefined,
         file,
         chicago: lastChicago,
         options: lastOptions,

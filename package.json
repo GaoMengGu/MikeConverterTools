@@ -12,7 +12,9 @@
     "check": "npm run test && npm run build"
   },
   "dependencies": {
+    "@mapbox/shp-write": "^0.4.3",
     "dxf-parser": "^1.1.2",
+    "fflate": "^0.8.3",
     "lucide": "^1.61.0",
     "rbush": "^4.0.1",
     "robust-point-in-polygon": "^1.0.3",
@@ -23,7 +25,9 @@
     "@types/node": "^26.6.5",
     "@types/rbush": "^4.0.0",
     "@types/robust-point-in-polygon": "^1.0.4",
+    "@types/shapefile": "^0.6.4",
     "prettier": "^3.9.10",
+    "shapefile": "^0.6.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

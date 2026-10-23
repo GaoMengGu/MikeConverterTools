@@ -12,6 +12,24 @@ export interface RainOptions {
 }
 export interface RainResult {
   generation?: {
+    catalogue?: {
+      id: string;
+      city: string;
+      region: string;
+      source: {
+        title: string;
+        url: string;
+        version: string;
+        published: string;
+        checked: string;
+        location: string;
+        attachment?: string;
+      };
+      scope: string;
+      duration: [number, number] | null;
+      periods: number[];
+      note: string;
+    };
     parameters: Record<string, string | number | undefined>;
     formula: string;
     peakSeconds: number;
