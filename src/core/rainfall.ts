@@ -117,6 +117,14 @@ function elapsed(text: string, unit: string, line: number) {
   return Math.round(seconds);
 }
 
+// Use the user's calendar date; UTC serialization can select yesterday/tomorrow.
+export function localMidnight(now = new Date()): string {
+  const year = String(now.getFullYear()).padStart(4, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day + "T00:00:00";
+}
+
 export function convertRainfall(
   text: string,
   options: RainOptions = {},
@@ -124,7 +132,7 @@ export function convertRainfall(
   const o = {
     timeMode: "elapsed",
     elapsedUnit: "minutes",
-    start: "2026-06-26 00:00:00",
+    start: localMidnight(),
     intervalSeconds: 60,
     startRow: 1,
     inputUnit: "mmh",

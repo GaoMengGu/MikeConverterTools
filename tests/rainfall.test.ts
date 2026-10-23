@@ -1,7 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as rainfall from "../src/core/rainfall";
 
 describe("rainfall sequence conversion", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 26, 12));
+  });
+  afterEach(() => vi.useRealTimers());
+  it("defaults elapsed and indexed sequences to local midnight on the current date", () => {
+    vi.setSystemTime(new Date(2027, 0, 2, 23, 59));
+    for (const timeMode of ["elapsed", "index"] as const) {
+      const text = timeMode === "index" ? "0\n60" : "0 0\n1 60";
+      const result = rainfall.convertRainfall(text, { timeMode });
+      expect(result.stats.start).toBe("2027-01-02 00:00:00");
+      expect(result.content).toContain("2027-01-02 00:01:00,60");
+      expect(
+        rainfall.convertRainfall(text, {
+          timeMode,
+          start: "2025-12-31T10:15:00",
+        }).stats.start,
+      ).toBe("2025-12-31 10:15:00");
+    }
+  });
   it("rejects missing indexed measurements and empty delimited fields", () => {
     expect(() =>
       rainfall.convertRainfall("60\n\n120", { timeMode: "index" }),

@@ -45,8 +45,8 @@ export function generateChicago(
     步长: p.stepSeconds,
   }))
     if (!Number.isFinite(v)) throw new Error(`请填写有效的${name}参数。`);
-  if (p.a <= 0 || p.b <= 0 || p.n <= 0 || p.n > 1)
-    throw new Error("公式须满足 A > 0、b > 0、0 < n ≤ 1；t 和 b 单位为分钟。");
+  if (p.a <= 0 || p.b <= 0 || p.n <= 0)
+    throw new Error("公式须满足 A > 0、b > 0、n > 0；t 和 b 单位为分钟。");
   if (p.peakRatio <= 0 || p.peakRatio >= 1)
     throw new Error("雨峰系数 r 须在 0 和 1 之间。");
   const rawSeconds = p.durationMinutes * 60;
@@ -59,6 +59,19 @@ export function generateChicago(
     p.stepSeconds <= 0
   )
     throw new Error("历时须为正的整秒数，步长须为正整数秒。");
+  // H'(t) = K [b + (1-n)t] / [60 (t+b)^(n+1)]. Both Chicago
+  // limbs traverse IDF durations [0,T], so reject negative continuous rain
+  // analytically, even when a coarse output interval would conceal it.
+  if (p.n > 1) {
+    const loss = (p.n - 1) * p.durationMinutes;
+    const tolerance = 8 * Number.EPSILON * Math.max(p.b, loss);
+    if (loss - p.b > tolerance)
+      throw new Error(
+        "当前 n、b 与总历时组合会产生负雨强：n > 1 时，芝加哥雨型须满足 T ≤ b/(n−1) = " +
+          Number((p.b / (p.n - 1)).toPrecision(12)) +
+          " min。请核对原公式适用历时或调整总历时；不要截断负值或修改官方系数。",
+      );
+  }
   const intervals = durationSeconds / p.stepSeconds;
   if (!Number.isInteger(intervals) || intervals < 1)
     throw new Error("历时须能被采样步长整除，至少包含一个区间。");

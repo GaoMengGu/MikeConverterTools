@@ -8,7 +8,11 @@ import {
   X,
   RotateCcw,
 } from "lucide";
-import type { RainOptions, RainResult } from "./core/rainfall";
+import {
+  localMidnight,
+  type RainOptions,
+  type RainResult,
+} from "./core/rainfall";
 import type { RainJob } from "./rainfall-worker";
 import { formulaTemplates, type ChicagoParameters } from "./core/chicago";
 
@@ -54,7 +58,7 @@ export function mountRainfall(root: HTMLElement) {
                     <input class="formula-coefficient" id="chicago-a" type="number" step="any" placeholder="A" aria-label="系数 A" title="系数 A / Aₚ"/>
                     <span class="formula-period" id="chicago-c-row"><span>(1 +</span><input class="formula-coefficient" id="chicago-c" type="number" step="any" placeholder="C" aria-label="重现期系数 C" title="重现期系数 C"/><span>lg P)</span></span>
                   </div>
-                  <div class="formula-denominator"><span class="formula-base"><span>(t +</span><input id="chicago-b" type="number" step="any" placeholder="b" aria-label="历时修正参数 b，分钟" title="历时修正参数 b · min"/><span>)</span></span><sup><input id="chicago-n" type="number" step="any" placeholder="n" aria-label="指数 n" title="指数 n，0 < n ≤ 1"/></sup></div>
+                  <div class="formula-denominator"><span class="formula-base"><span>(t +</span><input id="chicago-b" type="number" step="any" placeholder="b" aria-label="历时修正参数 b，分钟" title="历时修正参数 b · min"/><span>)</span></span><sup><input id="chicago-n" type="number" step="any" placeholder="n" aria-label="指数 n" title="指数 n > 0；n > 1 时须满足总历时 T ≤ b/(n−1)"/></sup></div>
                 </div>
               </div>
               <div class="formula-units"><span id="chicago-equation-unit">mm/h</span><span>t、b：min · lg：以 10 为底</span></div>
@@ -71,7 +75,7 @@ export function mountRainfall(root: HTMLElement) {
           <div class="setting-row"><label for="rain-encoding">文本编码</label><select id="rain-encoding"><option value="auto">自动识别（UTF-8 / GBK）</option><option value="utf-8">UTF-8</option><option value="gb18030">GBK / GB18030</option></select></div>
           <div class="setting-row"><label for="rain-time-mode">时间格式</label><select id="rain-time-mode"><option value="elapsed">相对时间＋雨强</option><option value="absolute">日期时间＋雨强</option><option value="index">单列雨强＋采样间隔</option></select></div>
           <div class="setting-row" id="rain-elapsed-row"><label for="rain-elapsed-unit">数值时间单位</label><select id="rain-elapsed-unit"><option value="minutes">分钟（HH:mm 始终为时:分）</option><option value="seconds">秒（HH:mm 始终为时:分）</option></select></div>
-          <div class="setting-row" id="rain-start-row"><label for="rain-start">起始日期时间</label><input id="rain-start" type="datetime-local" step="1" value="2026-06-26T00:00:00"/></div>
+          <div class="setting-row" id="rain-start-row"><label for="rain-start">起始日期时间</label><input id="rain-start" type="datetime-local" step="1" value="${localMidnight()}"/></div>
           <div class="setting-row" id="rain-interval-row" hidden><label for="rain-interval">采样间隔 · s</label><input id="rain-interval" type="number" min="1" step="1" value="60"/></div>
           <div class="setting-row"><label for="rain-data-row">数据起始行</label><input id="rain-data-row" type="number" min="1" step="1" value="1"/></div>
           <div class="setting-row"><label for="rain-input-unit">输入雨强单位</label><select id="rain-input-unit"><option value="mmh">mm/h</option><option value="ms">m/s</option></select></div>

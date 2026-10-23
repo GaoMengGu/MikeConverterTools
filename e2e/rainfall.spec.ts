@@ -10,6 +10,7 @@ test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => {
     throw error;
   });
+  await page.clock.setFixedTime(new Date(2026, 5, 26, 12));
   await page.goto("./");
   await page.getByRole("tab", { name: /降雨序列/ }).click();
 });
@@ -249,4 +250,70 @@ test("rainfall cancellation terminates its worker and recovers", async ({
   await page.getByRole("button", { name: "载入示例" }).click();
   await page.getByRole("button", { name: "开始转换", exact: true }).click();
   await expect(page.locator("#rain-result-state")).toHaveText("转换完成");
+});
+
+for (const scenario of [
+  { zone: "Asia/Shanghai", now: "2027-01-01T20:30:00Z", day: "2027-01-02" },
+  {
+    zone: "America/Los_Angeles",
+    now: "2027-01-02T03:30:00Z",
+    day: "2027-01-01",
+  },
+])
+  test.describe(scenario.zone, () => {
+    test.use({ timezoneId: scenario.zone });
+    test("defaults to local midnight across a UTC date boundary and downloads it", async ({
+      page,
+    }) => {
+      await page.clock.setFixedTime(new Date(scenario.now));
+      await page.reload();
+      await page.getByRole("tab", { name: /降雨序列/ }).click();
+      await expect(page.locator("#rain-start")).toHaveValue(
+        scenario.day + "T00:00",
+      );
+      await page.getByRole("button", { name: "载入示例" }).click();
+      await page.getByRole("button", { name: "开始转换", exact: true }).click();
+      await expect(page.locator("#rain-result-state")).toHaveText("转换完成");
+      const download = page.waitForEvent("download");
+      await page.getByRole("button", { name: "下载降雨文件" }).click();
+      expect(
+        await readFile((await (await download).path())!, "utf8"),
+      ).toContain(scenario.day + " 00:00:00,0");
+    });
+  });
+
+test("n above one generates valid rain and explains an excessive duration", async ({
+  page,
+}) => {
+  await page.locator("#rain-source").selectOption("formula");
+  for (const [id, value] of Object.entries({
+    a: "1000",
+    c: "0.5",
+    b: "30",
+    n: "1.25",
+    p: "50",
+    duration: "120",
+    r: "0.4",
+    step: "60",
+  }))
+    await page.locator("#chicago-" + id).fill(value);
+  await page.getByRole("button", { name: "开始转换", exact: true }).click();
+  await expect(page.locator("#rain-result-state")).toHaveText("转换完成");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载降雨文件" }).click();
+  const rates = (await readFile((await (await pending).path())!, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => Number(line.split(",")[1]));
+  expect(rates.every((rate) => rate >= 0)).toBe(true);
+  const total = (1000 * (1 + 0.5 * Math.log10(50)) * 120) / 150 ** 1.25 / 60;
+  expect(rates.reduce((sum, rate) => sum + rate, 0) / 60).toBeCloseTo(total, 9);
+  await page.locator("#chicago-b").fill("29.9");
+  await page.locator("#chicago-step").fill("7200");
+  await page.getByRole("button", { name: "开始转换", exact: true }).click();
+  await expect(page.locator("#rain-error")).toContainText("负雨强");
+  await expect(page.locator("#rain-error")).toContainText("119.6");
+  await expect(
+    page.getByRole("button", { name: "下载降雨文件" }),
+  ).toBeDisabled();
 });

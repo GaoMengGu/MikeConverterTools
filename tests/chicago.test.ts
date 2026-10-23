@@ -14,6 +14,40 @@ const settings = {
   stepSeconds: 60,
 };
 describe("Chicago hyetograph", () => {
+  it("allows n above one when cumulative depth stays increasing, including the boundary", () => {
+    for (const formula of ["return-period", "direct"] as const)
+      for (const n of [1.042, 1.25])
+        for (const peakRatio of [0.001, 0.4, 0.999]) {
+          const result = chicago.generateChicago({
+            ...settings,
+            formula,
+            n,
+            b: 30,
+            returnPeriod: 50,
+            durationMinutes: 120,
+            peakRatio,
+          });
+          const k =
+            formula === "direct" ? 1000 : 1000 * (1 + 0.5 * Math.log10(50));
+          expect(result.stats.totalMM).toBeCloseTo(
+            (k * 120) / 150 ** n / 60,
+            10,
+          );
+          expect(result.preview.every((p) => p.mmh >= 0)).toBe(true);
+        }
+  });
+  it("rejects negative continuous rain even when a single interval hides it", () => {
+    for (const stepSeconds of [60, 7200])
+      expect(() =>
+        chicago.generateChicago({ ...settings, b: 29.9, n: 1.25, stepSeconds }),
+      ).toThrow(/负雨强/);
+  });
+  it("accepts the decimal boundary despite floating point subtraction", () => {
+    expect(
+      chicago.generateChicago({ ...settings, b: 12, n: 1.1 }).stats.totalMM,
+    ).toBeGreaterThan(0);
+  });
+
   it("converts a formula expressed in mm/min without changing its coefficients", () => {
     const perMinute = chicago.generateChicago({ ...settings, unit: "mmmin" });
     const perHour = chicago.generateChicago({
