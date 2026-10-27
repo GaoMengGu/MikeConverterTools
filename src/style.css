@@ -1261,6 +1261,23 @@ pre {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
+.formula-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.formula-table-actions .button {
+  min-height: 44px;
+  white-space: normal;
+}
+#formula-table-state,
+#formula-table-error {
+  overflow-wrap: anywhere;
+}
+#formula-table-error {
+  color: #a42626;
+}
 .formula-editor legend {
   padding: 0 6px;
   font-size: 12px;
@@ -1442,4 +1459,43 @@ pre {
   padding: 10px;
   font: inherit;
   resize: vertical;
+}
+
+/* Give scientific charts stable proportions at screen and export sizes. */
+#rain-main .rain-chart {
+  flex: none;
+  height: 620px;
+  min-height: 620px;
+  background: #fff;
+  border-color: #dce5eb;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px #20344708;
+}
+.rain-chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+}
+.rain-chart-toolbar p {
+  margin: 0;
+  flex: 1 1 200px;
+  font-size: 11px;
+  color: #526b7c;
+  line-height: 1.7;
+}
+.rain-chart-toolbar .button {
+  min-height: 44px;
+}
+@media (max-width: 640px) {
+  #rain-main .rain-chart {
+    height: 650px;
+    min-height: 650px;
+  }
+  .rain-chart-toolbar .button {
+    width: 100%;
+    justify-content: center;
+  }
 }

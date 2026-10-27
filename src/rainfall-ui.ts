@@ -14,13 +14,17 @@ import {
   type RainResult,
 } from "./core/rainfall";
 import type { RainJob } from "./rainfall-worker";
+import { drawRainfallChart, rainfallChartPng } from "./rainfall-chart";
 import { formulaTemplates, type ChicagoParameters } from "./core/chicago";
 
 import {
   cityFormulas,
   formulaFollowups,
+  bundledFormulaTable,
+  formulaTemplateTable,
   resolveCityFormula,
 } from "./core/city-formulas";
+import { type FormulaTableEntry } from "./core/formula-table";
 
 const sample = "时间(hh:mm) 雨强(mm/h)\n00:00 0\n00:01 60\n00:02 0\n";
 const icons = {
@@ -45,6 +49,7 @@ export function mountRainfall(root: HTMLElement) {
           <div class="setting-row"><label for="rain-source">序列来源</label><select id="rain-source"><option value="file">已有降雨文件</option><option value="formula">暴雨公式 · 芝加哥雨型</option></select></div>
           <div id="chicago-settings" hidden>
             <div class="setting-row"><label for="city-formula">城市 / 分区公式</label><select id="city-formula"><option value="manual">手动填写公式</option></select></div>
+            <div class="formula-table-tools tool-note"><strong>公式表格</strong><p>可用 Excel / WPS 编辑 CSV：每行一个含P公式，或固定P公式的一组重现期行。导入只在本浏览器内处理。</p><div class="formula-table-actions"><button class="button secondary" id="formula-table-import" type="button">导入 CSV</button><input id="formula-table-file" type="file" accept=".csv" hidden/><button class="button secondary" id="formula-table-template" type="button">下载表格样板</button><button class="button secondary" id="formula-table-full" type="button">下载完整公式表</button><button class="button secondary" id="formula-table-restore" type="button">恢复内置表格</button></div><p id="formula-table-state" role="status">使用内置公式表格 · 16 个分区</p><p id="formula-table-error" role="alert" hidden></p><p>导入会替换本次公式列表，刷新页面后恢复内置。填写规则见<a href="https://github.com/GaoMengGu/MikeConverterTools/blob/main/docs/formula-table.md" target="_blank" rel="noopener noreferrer">表格说明 ↗</a>。</p></div>
             <div id="city-evidence" class="tool-note" hidden></div>
             <details class="tool-note"><summary>官方来源核实进度与未启用城市</summary><p>首批分区条目已核对发布原文；核实日期不等于保证实时最新。</p><div id="city-followups"></div></details>
             <div class="setting-row"><label for="chicago-formula">公式模板</label><select id="chicago-formula">${formulaTemplates.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}</select></div>
@@ -86,7 +91,7 @@ export function mountRainfall(root: HTMLElement) {
         <div class="error" id="rain-error" role="alert" hidden></div>
         <div class="run-row"><button class="button primary" id="rain-convert">${icon("arrow-right")}<span>开始转换</span></button><button class="icon-button" id="rain-reset" aria-label="重置降雨输入" title="重置降雨输入">${icon("rotate-ccw")}</button><span id="rain-run-state">等待文件</span><button class="button secondary" id="rain-cancel" hidden>${icon("x")}取消</button></div>
       </section>
-      <section class="preview-section"><div class="section-title"><span class="section-step">02</span><h2>雨强过程</h2><span class="preview-badge" id="rain-chart-state">未生成</span></div><div class="canvas-wrap rain-chart"><canvas id="rain-canvas" aria-label="降雨雨强过程图"></canvas><div class="empty-preview" id="rain-empty"><p>等待降雨序列</p><span>暂无时间序列</span></div></div><div class="preview-footer"><span class="legend-dot"></span><span>雨强 · mm/h</span><span>相对时间 · min</span></div><pre id="rain-output-preview" class="rain-output-preview" hidden></pre></section>
+      <section class="preview-section"><div class="section-title"><span class="section-step">02</span><h2>雨强过程</h2><span class="preview-badge" id="rain-chart-state">未生成</span></div><div class="canvas-wrap rain-chart"><canvas id="rain-canvas" role="img" aria-label="降雨雨强与累计雨量过程图" aria-describedby="rain-chart-description"></canvas><div class="empty-preview" id="rain-empty"><p>等待降雨序列</p><span>暂无时间序列</span></div></div><div class="rain-chart-toolbar"><p id="rain-chart-description">橙色：雨强 · mm/h；蓝色：累计雨量 · mm（右轴向下）</p><button class="button secondary" id="rain-chart-export" disabled>${icon("download")}导出图表 PNG</button></div><pre id="rain-output-preview" class="rain-output-preview" hidden></pre></section>
     </div>
     <section class="output-section"><div class="section-title"><span class="section-step">03</span><h2>转换结果</h2><span class="result-state" id="rain-result-state">待转换</span></div>
       <div class="stats"><div><span>记录数</span><strong id="rain-records">—</strong></div><div><span>总雨量</span><strong id="rain-total">—</strong></div><div><span>最大雨强</span><strong id="rain-peak">—</strong></div><div><span>时间间隔</span><strong id="rain-step">—</strong></div></div>
@@ -97,12 +102,24 @@ export function mountRainfall(root: HTMLElement) {
   createIcons({ icons, root });
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
     root.querySelector<T>(`#${id}`)!;
-  for (const f of cityFormulas) {
-    const o = document.createElement("option");
-    o.value = f.id;
-    o.textContent = f.city + " · " + f.label + " · " + f.source.version;
-    $("city-formula").append(o);
-  }
+  let activeFormulas: FormulaTableEntry[] = cityFormulas;
+  let activeFormulaText = bundledFormulaTable;
+  let activeFormulaFilename = "rainfall-formulas.csv";
+  const populateFormulaOptions = () => {
+    const select = $<HTMLSelectElement>("city-formula");
+    const current = select.value;
+    select.replaceChildren(new Option("手动填写公式", "manual"));
+    for (const f of activeFormulas) {
+      const o = document.createElement("option");
+      o.value = f.id;
+      o.textContent = f.city + " · " + f.label + " · " + f.source.version;
+      select.append(o);
+    }
+    select.value = activeFormulas.some((f) => f.id === current)
+      ? current
+      : "manual";
+  };
+  populateFormulaOptions();
   for (const f of formulaFollowups) {
     const p = document.createElement("p"),
       a = document.createElement("a");
@@ -132,7 +149,12 @@ export function mountRainfall(root: HTMLElement) {
   }
   function clear() {
     result = undefined;
-    for (const id of ["rain-download", "rain-report", "rain-guide"])
+    for (const id of [
+      "rain-download",
+      "rain-report",
+      "rain-guide",
+      "rain-chart-export",
+    ])
       $<HTMLButtonElement>(id).disabled = true;
     for (const id of ["rain-records", "rain-total", "rain-peak", "rain-step"])
       text(id, "—");
@@ -163,7 +185,7 @@ export function mountRainfall(root: HTMLElement) {
     for (const el of root.querySelectorAll<
       HTMLInputElement | HTMLSelectElement | HTMLButtonElement
     >(
-      "#rain-settings input,#rain-settings select,#rain-file,#rain-example,#rain-reset",
+      "#rain-settings input,#rain-settings select,#rain-settings button,#rain-file,#rain-example,#rain-reset",
     ))
       el.disabled = state;
     for (const el of document.querySelectorAll<HTMLButtonElement>(
@@ -212,7 +234,7 @@ export function mountRainfall(root: HTMLElement) {
     };
   }
   function preset() {
-    return cityFormulas.find((f) => f.id === value("city-formula"));
+    return activeFormulas.find((f) => f.id === value("city-formula"));
   }
   function presetLocks() {
     const active = !!preset();
@@ -252,6 +274,8 @@ export function mountRainfall(root: HTMLElement) {
         " | 核实 " +
         f.source.checked,
     );
+    if (f.origin?.kind === "imported")
+      add("用户导入表格 · 未由工具核实官方原文：" + activeFormulaFilename);
     add("适用地域：" + f.scope);
     add(
       "收录历时：" +
@@ -264,8 +288,14 @@ export function mountRainfall(root: HTMLElement) {
     );
     add(f.note);
     for (const [label, url] of [
-      ["官方发布原文", f.source.url],
-      ["官方附件", f.source.attachment],
+      [
+        f.origin?.kind === "imported" ? "表格所填来源" : "官方发布原文",
+        f.source.url,
+      ],
+      [
+        f.origin?.kind === "imported" ? "表格所填附件" : "官方附件",
+        f.source.attachment,
+      ],
     ])
       if (url) {
         const a = document.createElement("a");
@@ -283,6 +313,7 @@ export function mountRainfall(root: HTMLElement) {
       f.id,
       validPeriod ? period : f.periods[0],
       f.duration?.[0] ?? 60,
+      activeFormulas,
     );
     for (const [id, v] of Object.entries({
       a: p.a,
@@ -378,86 +409,130 @@ export function mountRainfall(root: HTMLElement) {
     const guide = document.createElement("pre");
     guide.textContent = result.guide;
     $("rain-import-settings").replaceChildren(guide);
-    for (const id of ["rain-download", "rain-report", "rain-guide"])
+    for (const id of [
+      "rain-download",
+      "rain-report",
+      "rain-guide",
+      "rain-chart-export",
+    ])
       $<HTMLButtonElement>(id).disabled = false;
     draw();
   }
   function draw() {
     if (!result || root.hidden) return;
-    const canvas = $<HTMLCanvasElement>("rain-canvas"),
-      rect = canvas.getBoundingClientRect(),
-      ratio = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    const ctx = canvas.getContext("2d")!;
-    ctx.scale(ratio, ratio);
-    const w = rect.width,
-      h = rect.height,
-      left = 55,
-      bottom = h - 37,
-      width = w - left - 20,
-      height = h - 70;
-    ctx.fillStyle = "#f8faf9";
-    ctx.fillRect(0, 0, w, h);
-    ctx.font = "11px system-ui";
-    const max = Math.max(1, result.stats.peakMMH) * 1.1,
-      duration = result.stats.durationSeconds;
-    const x = (seconds: number) => left + (seconds / duration) * width,
-      y = (mmh: number) => bottom - (mmh / max) * height;
-    for (let i = 0; i <= 4; i++) {
-      const yy = bottom - (height * i) / 4;
-      ctx.strokeStyle = "#dce7e0";
-      ctx.beginPath();
-      ctx.moveTo(left, yy);
-      ctx.lineTo(w - 20, yy);
-      ctx.stroke();
-      ctx.fillStyle = "#63766a";
-      ctx.fillText(number((max * i) / 4), 4, yy + 3);
-      ctx.fillText(
-        number(((duration / 60) * i) / 4),
-        left + (width * i) / 4 - 7,
-        bottom + 20,
-      );
-    }
-    ctx.fillText("mm/h", 5, 18);
-    ctx.fillText("min", w - 29, h - 5);
-    ctx.strokeStyle = "#13785a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    result.preview.forEach((p, i, all) => {
-      if (!i) {
-        ctx.moveTo(x(p.seconds), y(p.mmh));
-        return;
-      }
-      if (lastOptions.valueType === "backward") {
-        ctx.lineTo(x(all[i - 1].seconds), y(p.mmh));
-      }
-      if (lastOptions.valueType === "forward") {
-        ctx.lineTo(x(p.seconds), y(all[i - 1].mmh));
-      }
-      ctx.lineTo(x(p.seconds), y(p.mmh));
-    });
-    ctx.stroke();
+    const canvas = $<HTMLCanvasElement>("rain-canvas");
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    drawRainfallChart(
+      canvas,
+      result,
+      lastOptions,
+      rect.width,
+      rect.height,
+      Math.min(devicePixelRatio || 1, 2),
+    );
   }
   function download(
-    content: string,
+    content: string | Blob,
     name: string,
     type = "text/plain;charset=utf-8",
   ) {
-    const url = URL.createObjectURL(new Blob([content], { type })),
+    const url = URL.createObjectURL(
+        content instanceof Blob ? content : new Blob([content], { type }),
+      ),
       a = document.createElement("a");
     a.href = url;
     a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
+  function runWorker(job: RainJob) {
+    const current = new Worker(
+      new URL("./rainfall-worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker = current;
+    current.onmessage = ({ data }) => {
+      if (worker !== current) return;
+      stop();
+      if (data.type === "result") {
+        result = data.data;
+        show();
+      } else if (data.type === "formula-table") {
+        activeFormulas = data.entries;
+        activeFormulaText = data.text;
+        activeFormulaFilename = data.filename;
+        populateFormulaOptions();
+        text(
+          "formula-table-state",
+          `已导入 ${activeFormulaFilename} · ${activeFormulas.length} 个分区（仅本次）`,
+        );
+        syncPreset();
+        settingsVisibility();
+      } else if (job.kind === "import-formulas") {
+        text("formula-table-error", data.data + " 原公式列表已保留。");
+        $("formula-table-error").hidden = false;
+      } else error(data.data);
+    };
+    current.onerror = () => {
+      if (worker !== current) return;
+      stop();
+      error("降雨转换线程异常，请重试或缩小文件。");
+    };
+    current.postMessage(job);
+  }
+  $("formula-table-template").addEventListener("click", () =>
+    download(
+      formulaTemplateTable,
+      "暴雨公式表格样板.csv",
+      "text/csv;charset=utf-8",
+    ),
+  );
+  $("formula-table-full").addEventListener("click", () =>
+    download(
+      bundledFormulaTable,
+      "rainfall-formulas.csv",
+      "text/csv;charset=utf-8",
+    ),
+  );
+  $("formula-table-import").addEventListener("click", () =>
+    $("formula-table-file").click(),
+  );
+  $("formula-table-file").addEventListener("change", () => {
+    if (busy) return;
+    const input = $<HTMLInputElement>("formula-table-file");
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    clear();
+    $("formula-table-error").hidden = true;
+    setBusy(true);
+    text("rain-run-state", "正在读取公式表格…");
+    runWorker({ kind: "import-formulas", file, options: {}, encoding: "auto" });
+  });
+  $("formula-table-restore").addEventListener("click", () => {
+    clear();
+    activeFormulas = cityFormulas;
+    activeFormulaText = bundledFormulaTable;
+    activeFormulaFilename = "rainfall-formulas.csv";
+    populateFormulaOptions();
+    $("formula-table-error").hidden = true;
+    text(
+      "formula-table-state",
+      `使用内置公式表格 · ${cityFormulas.length} 个分区`,
+    );
+    syncPreset();
+    settingsVisibility();
+  });
   $("rain-settings").addEventListener("input", (e) => {
+    if ((e.target as HTMLElement).id === "formula-table-file") return;
     clear();
     if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
       syncPreset();
     settingsVisibility();
   });
   $("rain-settings").addEventListener("change", (e) => {
+    if ((e.target as HTMLElement).id === "formula-table-file") return;
     clear();
     if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
       syncPreset();
@@ -497,6 +572,7 @@ export function mountRainfall(root: HTMLElement) {
             selected.id,
             required("chicago-p"),
             required("chicago-duration"),
+            activeFormulas,
           );
         const full = value("chicago-formula") === "return-period";
         lastChicago = {
@@ -522,27 +598,12 @@ export function mountRainfall(root: HTMLElement) {
           startRow: 1,
         };
       }
-      const current = new Worker(
-        new URL("./rainfall-worker.ts", import.meta.url),
-        { type: "module" },
-      );
-      worker = current;
-      current.onmessage = ({ data }) => {
-        if (worker !== current) return;
-        stop();
-        if (data.type === "result") {
-          result = data.data;
-          show();
-        } else error(data.data);
-      };
-      current.onerror = () => {
-        if (worker !== current) return;
-        stop();
-        error("降雨转换线程异常，请重试或缩小文件。");
-      };
-      current.postMessage({
+      runWorker({
         cityFormulaId: preset()?.id,
         cityReturnPeriod: preset() ? Number(value("chicago-p")) : undefined,
+        formulaTable:
+          activeFormulas === cityFormulas ? undefined : activeFormulaText,
+        formulaTableFilename: activeFormulaFilename,
         file,
         chicago: lastChicago,
         options: lastOptions,
@@ -602,6 +663,25 @@ export function mountRainfall(root: HTMLElement) {
         result.guide,
         result.filename.replace(/\.[^.]+$/, ".mike-import.txt"),
       );
+  });
+  $("rain-chart-export").addEventListener("click", async () => {
+    if (!result) return;
+    const snapshot = result;
+    const button = $<HTMLButtonElement>("rain-chart-export");
+    const name =
+      value("rain-output-name")
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+        .replace(/\.[^.]+$/, "") || "rainfall";
+    button.disabled = true;
+    try {
+      const blob = await rainfallChartPng(snapshot, { ...lastOptions });
+      if (result === snapshot) download(blob, name + ".png");
+    } catch (e) {
+      if (result === snapshot) error((e as Error).message);
+    } finally {
+      button.disabled = !result;
+    }
   });
   $("rain-report").addEventListener("click", () => {
     if (!result) return;

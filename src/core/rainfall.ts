@@ -29,6 +29,7 @@ export interface RainResult {
       duration: [number, number] | null;
       periods: number[];
       note: string;
+      origin?: { kind: "bundled" | "imported"; filename?: string };
     };
     parameters: Record<string, string | number | undefined>;
     formula: string;
@@ -61,7 +62,7 @@ export interface RainResult {
     valueType: string;
   };
   warnings: string[];
-  preview: { seconds: number; mmh: number }[];
+  preview: { seconds: number; mmh: number; cumulativeMM: number }[];
 }
 
 const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
@@ -222,7 +223,12 @@ export function convertRainfall(
   const step = (points[1].time - first.time) / 1000;
   let regular = true,
     totalMM = 0,
-    peak = first;
+    peak = first,
+    peakCumulativeMM = 0;
+  const stride = Math.max(1, Math.ceil(points.length / 4000));
+  const preview: RainResult["preview"] = [
+    { seconds: 0, mmh: first.mmh, cumulativeMM: 0 },
+  ];
   for (let i = 1; i < points.length; i++) {
     const dt = (points[i].time - points[i - 1].time) / 1000;
     if (dt !== step) regular = false;
@@ -233,7 +239,16 @@ export function convertRainfall(
           ? points[i].mmh
           : points[i - 1].mmh;
     totalMM += (rate * dt) / 3600;
-    if (points[i].mmh > peak.mmh) peak = points[i];
+    if (points[i].mmh > peak.mmh) {
+      peak = points[i];
+      peakCumulativeMM = totalMM;
+    }
+    if (i % stride === 0 || i === points.length - 1)
+      preview.push({
+        seconds: (points[i].time - first.time) / 1000,
+        mmh: points[i].mmh,
+        cumulativeMM: totalMM,
+      });
   }
   if (!Number.isFinite(totalMM)) throw new Error("累计雨量超出数值范围。");
   const warnings: string[] = [];
@@ -303,14 +318,14 @@ export function convertRainfall(
     "日期时间按文件中的当地钟表时间输出，不作时区换算。",
     ...warnings,
   ].join("\n");
-  const stride = Math.max(1, Math.ceil(points.length / 4000));
-  const preview = points
-    .filter((_, i) => i % stride === 0 || i === points.length - 1)
-    .map((p) => ({ seconds: (p.time - first.time) / 1000, mmh: p.mmh }));
   // Retain the peak in the sampled chart; statistics always use the full series.
   const peakSeconds = (peak.time - first.time) / 1000;
   if (!preview.some((p) => p.seconds === peakSeconds)) {
-    preview.push({ seconds: peakSeconds, mmh: peak.mmh });
+    preview.push({
+      seconds: peakSeconds,
+      mmh: peak.mmh,
+      cumulativeMM: peakCumulativeMM,
+    });
     preview.sort((a, b) => a.seconds - b.seconds);
   }
   return {
