@@ -1261,22 +1261,40 @@ pre {
   border: 1px solid var(--border);
   border-radius: 4px;
 }
-.formula-table-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-.formula-table-actions .button {
+#city-search {
   min-height: 44px;
-  white-space: normal;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  background: white;
+  color: inherit;
+  font: inherit;
 }
-#formula-table-state,
-#formula-table-error {
+#rain-settings .formula-picker .setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 9px 0;
+}
+#rain-settings .formula-picker input,
+#rain-settings .formula-picker select {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+  font-size: 12px;
+}
+#city-evidence {
+  padding: 12px;
+  border-left: 3px solid var(--green);
+  background: #f4f8f5;
   overflow-wrap: anywhere;
 }
-#formula-table-error {
-  color: #a42626;
+#city-evidence p {
+  margin: 0 0 8px;
+}
+.formula-picker .tool-note {
+  margin: 8px 0;
 }
 .formula-editor legend {
   padding: 0 6px;

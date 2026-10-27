@@ -47,21 +47,40 @@ function row(patch: Record<string, string> = {}) {
 
 describe("editable rainfall formula CSV", () => {
   it("preserves every shipped coefficient, scope and source through migration to CSV", () => {
-    const originalIds = ["nanjing-south-2024", "nanjing-north-2024", "tianjin-1-2016", "tianjin-2-2016", "tianjin-3-2016", "tianjin-4-2016", "shenzhen-west-2024", "shenzhen-central-2024", "shenzhen-east-2024", "shenzhen-shenshan-2024", "guangzhou-central-2022", "guangzhou-huadu-2022", "guangzhou-conghua-2022", "guangzhou-panyu-2022", "guangzhou-zengcheng-2022", "changzhou-short-2025"];
-    const normalized = originalIds.map(id => cityFormulas.find(f => f.id === id)!).map((f) => ({
-      id: f.id,
-      city: f.city,
-      label: f.label,
-      scope: f.scope,
-      source: f.source,
-      duration: f.duration,
-      periods: f.periods,
-      peakRatio: f.peakRatio ?? null,
-      note: f.note,
-      values: (f.discrete ? f.periods : [f.periods[0], f.periods[1]]).map((p) =>
-        resolveCityFormula(f.id, p, 120),
-      ),
-    }));
+    const originalIds = [
+      "nanjing-south-2024",
+      "nanjing-north-2024",
+      "tianjin-1-2016",
+      "tianjin-2-2016",
+      "tianjin-3-2016",
+      "tianjin-4-2016",
+      "shenzhen-west-2024",
+      "shenzhen-central-2024",
+      "shenzhen-east-2024",
+      "shenzhen-shenshan-2024",
+      "guangzhou-central-2022",
+      "guangzhou-huadu-2022",
+      "guangzhou-conghua-2022",
+      "guangzhou-panyu-2022",
+      "guangzhou-zengcheng-2022",
+      "changzhou-short-2025",
+    ];
+    const normalized = originalIds
+      .map((id) => cityFormulas.find((f) => f.id === id)!)
+      .map((f) => ({
+        id: f.id,
+        city: f.city,
+        label: f.label,
+        scope: f.scope,
+        source: f.source,
+        duration: f.duration,
+        periods: f.periods,
+        peakRatio: f.peakRatio ?? null,
+        note: f.note,
+        values: (f.discrete ? f.periods : [f.periods[0], f.periods[1]]).map(
+          (p) => resolveCityFormula(f.id, p, 120),
+        ),
+      }));
     const sort = (value: unknown): unknown =>
       Array.isArray(value)
         ? value.map(sort)
@@ -80,7 +99,7 @@ describe("editable rainfall formula CSV", () => {
     ).toBe("a83fa0dd0e55b954ba07619e4dd09a36f5a7e48698f31791331319f5a652cf4b");
     expect(cityFormulas.length).toBeGreaterThanOrEqual(16);
   });
-  it("loads the downloadable template with range and discrete formulas", () => {
+  it("loads the maintenance template with range and discrete formulas", () => {
     const entries = parseFormulaTable(sample());
     expect(entries).toHaveLength(2);
     expect(resolveCityFormula(entries[0].id, 10, 120, entries)).toMatchObject({
@@ -152,7 +171,7 @@ describe("editable rainfall formula CSV", () => {
     [{ 附件链接: "data:text/html,x" }, /附件链接/],
     [{ P最小值_年: "101" }, /重现期/],
     [{ P固定值_年: "10" }, /P固定值/],
-    [{ 历时最大值_min: "" }, /历时/],
+    [{ 历时最大值_min: "0.5" }, /历时/],
     [{ 雨峰系数r: "1" }, /雨峰/],
     [{ 核实日期: "2026-02-30" }, /日期/],
     [{ 公式ID: "__proto__" }, /ID/],

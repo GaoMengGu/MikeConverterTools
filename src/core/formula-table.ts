@@ -20,7 +20,7 @@ export interface FormulaTableEntry {
     checked: string;
     location: string;
   };
-  duration: [number, number] | null;
+  duration: [number | null, number | null] | null;
   periods: [number, number] | number[];
   discrete?: boolean;
   unit?: FormulaUnit;
@@ -28,6 +28,10 @@ export interface FormulaTableEntry {
   table?: Record<number, [number, number, number]>;
   peakRatio?: number;
   note: string;
+  calculationRule?: "海口总公式I" | "海口总公式II" | "b乘P的0.031次方";
+  periodMinExclusive?: boolean;
+  durationMinExclusive?: boolean;
+  durationMaxExclusive?: boolean;
   origin?: { kind: "bundled" | "imported"; filename?: string };
 }
 
@@ -59,7 +63,16 @@ export const formulaTableColumns = [
 ] as const;
 
 type FormulaColumn = (typeof formulaTableColumns)[number];
-const formulaColumnSet = new Set<string>(formulaTableColumns);
+const ruleColumns = [
+  "计算规则",
+  "P下限开区间",
+  "历时下限开区间",
+  "历时上限开区间",
+] as const;
+const formulaColumnSet = new Set<string>([
+  ...formulaTableColumns,
+  ...ruleColumns,
+]);
 const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -166,8 +179,17 @@ function url(
 ) {
   const value = text(row, key, rowNumber, required);
   if (!value) return undefined;
-  if (!/^https:\/\/[A-Za-z0-9.-]+(?:\/|$)/.test(value))
-    fail(rowNumber, key, "必须使用 https:// 官方链接。");
+  try {
+    const parsed = new URL(value);
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password
+    )
+      throw new Error();
+  } catch {
+    fail(rowNumber, key, "必须使用 http:// 或 https:// 来源链接。");
+  }
   return value;
 }
 
@@ -187,6 +209,8 @@ function unit(raw: string, rowNumber: number): FormulaUnit {
     "mm/h": "mmh",
     "mm/min": "mmmin",
     "L/(s·ha)": "lsha",
+    "L/(s·hm²)": "lsha",
+    "L/(s·hm2)": "lsha",
     mmh: "mmh",
     mmmin: "mmmin",
     lsha: "lsha",
@@ -262,14 +286,11 @@ export function parseFormulaTable(
     const durationMin = positive(r, "历时最小值_min", first.row, false);
     const durationMax = positive(r, "历时最大值_min", first.row, false);
     if (
-      (durationMin === undefined) !== (durationMax === undefined) ||
-      (durationMin !== undefined && durationMax! < durationMin)
+      durationMin !== undefined &&
+      durationMax !== undefined &&
+      durationMax < durationMin
     )
-      fail(
-        first.row,
-        "历时",
-        "最小值和最大值必须同时填写，且最大值不小于最小值。",
-      );
+      fail(first.row, "历时", "最大值不小于最小值；未知边界可留空。");
     const peak = number(r, "雨峰系数r", first.row, false);
     if (peak !== undefined && (peak <= 0 || peak >= 1))
       fail(first.row, "雨峰系数r", "必须在 0 和 1 之间。");
@@ -286,8 +307,52 @@ export function parseFormulaTable(
       checked,
       location: text(r, "原文位置", first.row),
     };
-    const duration: [number, number] | null =
-      durationMin === undefined ? null : [durationMin, durationMax!];
+    const duration: FormulaTableEntry["duration"] =
+      durationMin === undefined && durationMax === undefined
+        ? null
+        : [durationMin ?? null, durationMax ?? null];
+    const calculationRule = (r["计算规则"] ?? "").trim();
+    if (
+      calculationRule &&
+      !["海口总公式I", "海口总公式II", "b乘P的0.031次方"].includes(
+        calculationRule,
+      )
+    )
+      fail(first.row, "计算规则", "不支持的计算规则。");
+    if (calculationRule && !isRange)
+      fail(first.row, "计算规则", "特殊计算规则仅适用于含P公式。");
+    const exclusive = (
+      key: (typeof ruleColumns)[number],
+      bound: number | undefined,
+    ) => {
+      const value = (r[key] ?? "").trim();
+      if (value && value !== "是") fail(first.row, key, "仅允许填 是 或留空。");
+      if (value && bound === undefined)
+        fail(first.row, key, "开区间必须提供对应数值边界。");
+      return value === "是";
+    };
+    const rules = {
+      ...(calculationRule
+        ? {
+            calculationRule:
+              calculationRule as FormulaTableEntry["calculationRule"],
+          }
+        : {}),
+      ...(r["P下限开区间"]?.trim()
+        ? {
+            periodMinExclusive: exclusive(
+              "P下限开区间",
+              positive(r, "P最小值_年", first.row, false),
+            ),
+          }
+        : {}),
+      ...(r["历时下限开区间"]?.trim()
+        ? { durationMinExclusive: exclusive("历时下限开区间", durationMin) }
+        : {}),
+      ...(r["历时上限开区间"]?.trim()
+        ? { durationMaxExclusive: exclusive("历时上限开区间", durationMax) }
+        : {}),
+    };
     const note = text(r, "备注", first.row, false);
     const metadata = [
       city,
@@ -300,6 +365,7 @@ export function parseFormulaTable(
       peak,
       JSON.stringify(source),
       note,
+      ...ruleColumns.map((key) => (r[key] ?? "").trim()),
     ];
     for (const item of group.slice(1)) {
       const other = item.values;
@@ -322,6 +388,7 @@ export function parseFormulaTable(
           location: text(other, "原文位置", item.row),
         }),
         text(other, "备注", item.row, false),
+        ...ruleColumns.map((key) => (other[key] ?? "").trim()),
       ];
       if (JSON.stringify(otherMeta) !== JSON.stringify(metadata))
         fail(item.row, "公式ID", "同一 ID 的固定P行元数据不一致。");
@@ -333,9 +400,11 @@ export function parseFormulaTable(
           "公式ID",
           "ID 重复：含P公式只能占一行；固定P公式才允许同一 ID 多行。",
         );
-      const pMin = positive(r, "P最小值_年", first.row);
-      const pMax = positive(r, "P最大值_年", first.row);
-      if (pMax! < pMin!)
+      const pMin = positive(r, "P最小值_年", first.row, false);
+      const pMax = positive(r, "P最大值_年", first.row, false);
+      if ((pMin === undefined) !== (pMax === undefined))
+        fail(first.row, "重现期", "P最小值和最大值应同时填写或同时留空。");
+      if (pMin !== undefined && pMax! < pMin)
         fail(first.row, "重现期", "P最大值必须不小于P最小值。");
       if (number(r, "P固定值_年", first.row, false) !== undefined)
         fail(first.row, "P固定值_年", "含P公式不能填写固定重现期。");
@@ -345,7 +414,7 @@ export function parseFormulaTable(
       const c = number(r, "C", first.row);
       if (c === undefined) fail(first.row, "C", "含P公式必须填写 C。");
       if (c < 0) fail(first.row, "C", "必须大于或等于 0。");
-      if (1 + c * Math.log10(pMin!) <= 0)
+      if (pMin !== undefined && 1 + c * Math.log10(pMin) <= 0)
         fail(first.row, "重现期", "最小重现期下的公式分子必须为正值。");
       entries.push({
         id,
@@ -354,7 +423,7 @@ export function parseFormulaTable(
         scope,
         source,
         duration,
-        periods: [pMin!, pMax!],
+        periods: pMin === undefined ? [] : [pMin, pMax!],
         coefficients: {
           formula: "return-period",
           a,
@@ -365,6 +434,7 @@ export function parseFormulaTable(
         },
         peakRatio: peak,
         note,
+        ...rules,
         origin,
       });
       continue;
@@ -408,6 +478,7 @@ export function parseFormulaTable(
       unit: formulaUnit,
       peakRatio: peak,
       note,
+      ...rules,
       origin,
     });
   }

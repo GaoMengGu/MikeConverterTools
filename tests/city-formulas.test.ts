@@ -7,7 +7,7 @@ import {
 describe("official rainfall catalogue", () => {
   it("keeps stable provenance and rejects unknown, out-of-scope and altered local coefficients", () => {
     for (const f of cityFormulas) {
-      expect(f.source.url).toMatch(/^https:\/\/.+\.(gov.cn|cma.cn)\//);
+      expect(f.source.url).toMatch(/^https?:\/\//);
       expect(f.source.checked).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(f.scope.length).toBeGreaterThan(0);
     }
@@ -79,13 +79,32 @@ it("all enabled region/period combinations generate nonnegative conserved interv
   for (const f of cityFormulas)
     for (const period of f.discrete
       ? f.periods
-      : [f.periods[0], f.periods[1]]) {
-      const minDuration = f.duration?.[0] ?? 1;
+      : [
+          f.periods[0] ? f.periods[0] + (f.periodMinExclusive ? 1 : 0) : 2,
+          f.periods[1] ?? 100,
+        ]) {
+      const minDuration =
+        f.calculationRule === "海口总公式II" && period <= 10
+          ? 181
+          : Math.ceil(
+              (f.duration?.[0] ?? 1) + (f.durationMinExclusive ? 1 / 60 : 0),
+            );
       const p = resolveCityFormula(f.id, period, minDuration);
       const limit = p.n > 1 ? p.b / (p.n - 1) : Infinity;
-      const duration = Math.floor(Math.min(120, f.duration?.[1] ?? 120, limit));
+      const maxDuration =
+        (f.duration?.[1] ?? Infinity) - (f.durationMaxExclusive ? 1 / 60 : 0);
+      const duration = Math.floor(
+        Math.min(Math.max(120, minDuration), maxDuration, limit),
+      );
       if (duration < minDuration) {
-        expect(() => generateCityChicago(f.id, { returnPeriod: period, durationMinutes: minDuration, stepSeconds: 1, peakRatio: .4 })).toThrow(/负雨强/);
+        expect(() =>
+          generateCityChicago(f.id, {
+            returnPeriod: period,
+            durationMinutes: minDuration,
+            stepSeconds: 1,
+            peakRatio: 0.4,
+          }),
+        ).toThrow(/负雨强/);
         continue;
       }
       const r = generateCityChicago(

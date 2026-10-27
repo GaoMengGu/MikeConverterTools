@@ -19,12 +19,9 @@ import { formulaTemplates, type ChicagoParameters } from "./core/chicago";
 
 import {
   cityFormulas,
-  formulaFollowups,
-  bundledFormulaTable,
-  formulaTemplateTable,
   resolveCityFormula,
+  type CityFormula,
 } from "./core/city-formulas";
-import { type FormulaTableEntry } from "./core/formula-table";
 
 const sample = "时间(hh:mm) 雨强(mm/h)\n00:00 0\n00:01 60\n00:02 0\n";
 const icons = {
@@ -48,10 +45,13 @@ export function mountRainfall(root: HTMLElement) {
         <div class="settings"><div class="settings-title">转换参数</div><div id="rain-settings">
           <div class="setting-row"><label for="rain-source">序列来源</label><select id="rain-source"><option value="file">已有降雨文件</option><option value="formula">暴雨公式 · 芝加哥雨型</option></select></div>
           <div id="chicago-settings" hidden>
-            <div class="setting-row"><label for="city-formula">城市 / 分区公式</label><select id="city-formula"><option value="manual">手动填写公式</option></select></div>
-            <div class="formula-table-tools tool-note"><strong>公式表格</strong><p>可用 Excel / WPS 编辑 CSV：每行一个含P公式，或固定P公式的一组重现期行。导入只在本浏览器内处理。</p><div class="formula-table-actions"><button class="button secondary" id="formula-table-import" type="button">导入 CSV</button><input id="formula-table-file" type="file" accept=".csv" hidden/><button class="button secondary" id="formula-table-template" type="button">下载表格样板</button><button class="button secondary" id="formula-table-full" type="button">下载完整公式表</button><button class="button secondary" id="formula-table-restore" type="button">恢复内置表格</button></div><p id="formula-table-state" role="status">使用内置公式表格 · 16 个分区</p><p id="formula-table-error" role="alert" hidden></p><p>导入会替换本次公式列表，刷新页面后恢复内置。填写规则见<a href="https://github.com/GaoMengGu/MikeConverterTools/blob/main/docs/formula-table.md" target="_blank" rel="noopener noreferrer">表格说明 ↗</a>。</p></div>
+            <div class="formula-picker">
+              <div class="setting-row"><label for="city-search">搜索公式</label><input id="city-search" type="search" placeholder="城市、分区或版本" autocomplete="off" aria-describedby="city-match-count"/></div>
+              <div class="setting-row"><label for="city-filter">城市</label><select id="city-filter"><option value="">全部城市</option></select></div>
+              <div class="setting-row"><label for="city-formula">分区 / 版本</label><select id="city-formula"><option value="manual">手动填写公式</option></select></div>
+              <p id="city-match-count" class="tool-note" role="status"></p>
+            </div>
             <div id="city-evidence" class="tool-note" hidden></div>
-            <details class="tool-note"><summary>官方来源核实进度与未启用城市</summary><p>首批分区条目已核对发布原文；核实日期不等于保证实时最新。</p><div id="city-followups"></div></details>
             <div class="setting-row"><label for="chicago-formula">公式模板</label><select id="chicago-formula">${formulaTemplates.map((f) => `<option value="${f.id}">${f.label}</option>`).join("")}</select></div>
             <div class="setting-row"><label for="chicago-unit">公式输出单位</label><select id="chicago-unit"><option value="mmh">mm/h</option><option value="mmmin">mm/min</option><option value="lsha">L/(s·ha)</option></select></div>
             <fieldset class="formula-editor" id="chicago-equation" aria-label="暴雨强度公式">
@@ -68,6 +68,7 @@ export function mountRainfall(root: HTMLElement) {
               </div>
               <div class="formula-units"><span id="chicago-equation-unit">mm/h</span><span>t、b：min · lg：以 10 为底</span></div>
             </fieldset>
+            <p id="city-coefficients-note" class="tool-note" hidden></p>
             <div class="chicago-parameters">
             <div class="setting-row" id="chicago-p-row"><label for="chicago-p">重现期 P · 年</label><input id="chicago-p" type="number" step="any" placeholder="填写设计重现期"/></div>
             <div class="setting-row"><label for="chicago-duration">降雨历时 · min</label><input id="chicago-duration" type="number" step="any" placeholder="填写总历时"/></div>
@@ -102,34 +103,50 @@ export function mountRainfall(root: HTMLElement) {
   createIcons({ icons, root });
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
     root.querySelector<T>(`#${id}`)!;
-  let activeFormulas: FormulaTableEntry[] = cityFormulas;
-  let activeFormulaText = bundledFormulaTable;
-  let activeFormulaFilename = "rainfall-formulas.csv";
-  const populateFormulaOptions = () => {
+  const citySelect = $<HTMLSelectElement>("city-filter");
+  function durationLabel(f: CityFormula) {
+    if (!f.duration) return "历时范围未明确";
+    const [min, max] = f.duration;
+    return `${min === null ? "" : `${min} ${f.durationMinExclusive ? "<" : "≤"} `}t${max === null ? "" : ` ${f.durationMaxExclusive ? "<" : "≤"} ${max}`} min${min === null || max === null ? "（另一边界未明确）" : ""}`;
+  }
+  function periodLabel(f: CityFormula) {
+    if (!f.periods.length) return "P范围未明确";
+    return f.discrete
+      ? `P = ${f.periods.join("、")} 年`
+      : `${f.periods[0]} ${f.periodMinExclusive ? "<" : "≤"} P ≤ ${f.periods[1]} 年`;
+  }
+  for (const city of [...new Set(cityFormulas.map((f) => f.city))].sort(
+    (a, b) => a.localeCompare(b, "zh-CN"),
+  ))
+    citySelect.add(new Option(city, city));
+  function populateFormulaOptions() {
+    const query = $<HTMLInputElement>("city-search")
+      .value.trim()
+      .toLocaleLowerCase();
+    const city = citySelect.value;
+    const entries = cityFormulas.filter(
+      (f) =>
+        (!city || f.city === city) &&
+        `${f.city} ${f.label} ${f.scope} ${f.source.version}`
+          .toLocaleLowerCase()
+          .includes(query),
+    );
     const select = $<HTMLSelectElement>("city-formula");
     const current = select.value;
     select.replaceChildren(new Option("手动填写公式", "manual"));
-    for (const f of activeFormulas) {
-      const o = document.createElement("option");
-      o.value = f.id;
-      o.textContent = f.city + " · " + f.label + " · " + f.source.version;
-      select.append(o);
+    for (const f of entries) {
+      select.add(
+        new Option(
+          `${f.city} · ${f.label} · ${periodLabel(f)} · ${durationLabel(f)} · ${f.source.version}`,
+          f.id,
+        ),
+      );
     }
-    select.value = activeFormulas.some((f) => f.id === current)
-      ? current
-      : "manual";
-  };
-  populateFormulaOptions();
-  for (const f of formulaFollowups) {
-    const p = document.createElement("p"),
-      a = document.createElement("a");
-    a.href = f.url;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.textContent = f.city;
-    p.append(a, document.createTextNode("：" + f.note));
-    $("city-followups").append(p);
+    select.value = entries.some((f) => f.id === current) ? current : "manual";
+    $("city-match-count").textContent =
+      `${entries.length} 个公式条目${entries.length ? " · 可选择分区与版本" : " · 请调整搜索词或城市"}`;
   }
+  populateFormulaOptions();
   let file: File | undefined,
     result: RainResult | undefined,
     worker: Worker | undefined,
@@ -234,7 +251,7 @@ export function mountRainfall(root: HTMLElement) {
     };
   }
   function preset() {
-    return activeFormulas.find((f) => f.id === value("city-formula"));
+    return cityFormulas.find((f) => f.id === value("city-formula"));
   }
   function presetLocks() {
     const active = !!preset();
@@ -252,6 +269,7 @@ export function mountRainfall(root: HTMLElement) {
   function syncPreset() {
     const f = preset();
     $("city-evidence").hidden = !f;
+    $("city-coefficients-note").hidden = !f;
     if (!f) {
       $<HTMLInputElement>("chicago-reference").value = "";
       presetLocks();
@@ -271,31 +289,17 @@ export function mountRainfall(root: HTMLElement) {
         f.source.version +
         " | 发布 " +
         f.source.published +
-        " | 核实 " +
+        " | 资料核对 " +
         f.source.checked,
     );
-    if (f.origin?.kind === "imported")
-      add("用户导入表格 · 未由工具核实官方原文：" + activeFormulaFilename);
+
     add("适用地域：" + f.scope);
-    add(
-      "收录历时：" +
-        (f.duration
-          ? f.duration.join("–") + " min"
-          : "原文条款未明确，使用前核实") +
-        "；重现期：" +
-        f.periods.join(f.discrete ? "、" : "–") +
-        " 年",
-    );
+    add("来源：" + f.source.title + "；原文位置：" + f.source.location);
+    add("收录范围：" + durationLabel(f) + "；" + periodLabel(f));
     add(f.note);
     for (const [label, url] of [
-      [
-        f.origin?.kind === "imported" ? "表格所填来源" : "官方发布原文",
-        f.source.url,
-      ],
-      [
-        f.origin?.kind === "imported" ? "表格所填附件" : "官方附件",
-        f.source.attachment,
-      ],
+      ["来源原文", f.source.url],
+      ["来源附件", f.source.attachment],
     ])
       if (url) {
         const a = document.createElement("a");
@@ -308,13 +312,28 @@ export function mountRainfall(root: HTMLElement) {
     const period = Number(value("chicago-p"));
     const validPeriod = f.discrete
       ? f.periods.includes(period)
-      : period >= f.periods[0] && period <= f.periods[1];
-    const p = resolveCityFormula(
-      f.id,
-      validPeriod ? period : f.periods[0],
-      f.duration?.[0] ?? 60,
-      activeFormulas,
-    );
+      : Number.isFinite(period) &&
+        period > 0 &&
+        (!f.periods.length ||
+          (period >= f.periods[0] && period <= f.periods[1])) &&
+        !(f.periodMinExclusive && period === f.periods[0]);
+    const previewPeriod = validPeriod
+      ? period
+      : (f.periods[0] ?? 10) + (f.periodMinExclusive ? 1 : 0);
+    const previewDuration =
+      f.calculationRule === "海口总公式II" && previewPeriod <= 10
+        ? 181
+        : f.duration?.[0] != null
+          ? f.duration[0] + (f.durationMinExclusive ? 1 / 60 : 0)
+          : Math.min(
+              60,
+              (f.duration?.[1] ?? 60) - (f.durationMaxExclusive ? 1 / 60 : 0),
+            );
+    const p = resolveCityFormula(f.id, previewPeriod, previewDuration);
+    $("city-coefficients-note").textContent =
+      f.discrete && !validPeriod
+        ? "请填写目录中列出的重现期后显示系数。"
+        : `当前系数按 P = ${previewPeriod} 年${validPeriod ? "" : "预览，请填写设计重现期"}${f.calculationRule ? `；已应用${f.calculationRule}修正` : ""}。`;
     for (const [id, v] of Object.entries({
       a: p.a,
       b: p.b,
@@ -458,20 +477,6 @@ export function mountRainfall(root: HTMLElement) {
       if (data.type === "result") {
         result = data.data;
         show();
-      } else if (data.type === "formula-table") {
-        activeFormulas = data.entries;
-        activeFormulaText = data.text;
-        activeFormulaFilename = data.filename;
-        populateFormulaOptions();
-        text(
-          "formula-table-state",
-          `已导入 ${activeFormulaFilename} · ${activeFormulas.length} 个分区（仅本次）`,
-        );
-        syncPreset();
-        settingsVisibility();
-      } else if (job.kind === "import-formulas") {
-        text("formula-table-error", data.data + " 原公式列表已保留。");
-        $("formula-table-error").hidden = false;
       } else error(data.data);
     };
     current.onerror = () => {
@@ -481,60 +486,27 @@ export function mountRainfall(root: HTMLElement) {
     };
     current.postMessage(job);
   }
-  $("formula-table-template").addEventListener("click", () =>
-    download(
-      formulaTemplateTable,
-      "暴雨公式表格样板.csv",
-      "text/csv;charset=utf-8",
-    ),
-  );
-  $("formula-table-full").addEventListener("click", () =>
-    download(
-      bundledFormulaTable,
-      "rainfall-formulas.csv",
-      "text/csv;charset=utf-8",
-    ),
-  );
-  $("formula-table-import").addEventListener("click", () =>
-    $("formula-table-file").click(),
-  );
-  $("formula-table-file").addEventListener("change", () => {
-    if (busy) return;
-    const input = $<HTMLInputElement>("formula-table-file");
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file) return;
-    clear();
-    $("formula-table-error").hidden = true;
-    setBusy(true);
-    text("rain-run-state", "正在读取公式表格…");
-    runWorker({ kind: "import-formulas", file, options: {}, encoding: "auto" });
-  });
-  $("formula-table-restore").addEventListener("click", () => {
-    clear();
-    activeFormulas = cityFormulas;
-    activeFormulaText = bundledFormulaTable;
-    activeFormulaFilename = "rainfall-formulas.csv";
-    populateFormulaOptions();
-    $("formula-table-error").hidden = true;
-    text(
-      "formula-table-state",
-      `使用内置公式表格 · ${cityFormulas.length} 个分区`,
-    );
-    syncPreset();
-    settingsVisibility();
-  });
   $("rain-settings").addEventListener("input", (e) => {
-    if ((e.target as HTMLElement).id === "formula-table-file") return;
+    if (["city-search", "city-filter"].includes((e.target as HTMLElement).id))
+      populateFormulaOptions();
     clear();
-    if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
+    if (
+      ["city-formula", "chicago-p", "city-search", "city-filter"].includes(
+        (e.target as HTMLElement).id,
+      )
+    )
       syncPreset();
     settingsVisibility();
   });
   $("rain-settings").addEventListener("change", (e) => {
-    if ((e.target as HTMLElement).id === "formula-table-file") return;
+    if (["city-search", "city-filter"].includes((e.target as HTMLElement).id))
+      populateFormulaOptions();
     clear();
-    if (["city-formula", "chicago-p"].includes((e.target as HTMLElement).id))
+    if (
+      ["city-formula", "chicago-p", "city-search", "city-filter"].includes(
+        (e.target as HTMLElement).id,
+      )
+    )
       syncPreset();
     settingsVisibility();
   });
@@ -572,7 +544,6 @@ export function mountRainfall(root: HTMLElement) {
             selected.id,
             required("chicago-p"),
             required("chicago-duration"),
-            activeFormulas,
           );
         const full = value("chicago-formula") === "return-period";
         lastChicago = {
@@ -601,9 +572,6 @@ export function mountRainfall(root: HTMLElement) {
       runWorker({
         cityFormulaId: preset()?.id,
         cityReturnPeriod: preset() ? Number(value("chicago-p")) : undefined,
-        formulaTable:
-          activeFormulas === cityFormulas ? undefined : activeFormulaText,
-        formulaTableFilename: activeFormulaFilename,
         file,
         chicago: lastChicago,
         options: lastOptions,

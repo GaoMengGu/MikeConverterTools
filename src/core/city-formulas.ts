@@ -1,7 +1,6 @@
 import { generateChicago, type ChicagoParameters } from "./chicago";
 import type { RainOptions } from "./rainfall";
 import bundledFormulaCsv from "../data/rainfall-formulas.csv?raw";
-import formulaTemplateCsv from "../data/rainfall-formulas-template.csv?raw";
 import { parseFormulaTable, type FormulaTableEntry } from "./formula-table";
 
 export type CityFormula = FormulaTableEntry;
@@ -9,42 +8,6 @@ export const cityFormulas = parseFormulaTable(bundledFormulaCsv, {
   kind: "bundled",
   filename: "rainfall-formulas.csv",
 });
-export const bundledFormulaTable = bundledFormulaCsv;
-export const formulaTemplateTable = formulaTemplateCsv;
-
-export const formulaFollowups = [
-  {
-    city: "北京",
-    url: "https://ghzrzyw.beijing.gov.cn/biaozhunguanli/bz/cxgh/202002/t20200220_1662906.html",
-    note: "已定位DB11/T 969-2016官方全文。公式分I/II区、1–5与5–1440min；分段连续雨型需单独实现，尚不启用。",
-  },
-  {
-    city: "上海",
-    url: "https://swj.sh.gov.cn/swj-zhzwqtzcwj/20260116/321ff7d9c904431caba046492326f92d.html",
-    note: "官方文件引用DB31/T1043-2017；尚未完成标准全文系数和适用范围复核。",
-  },
-
-  {
-    city: "武汉",
-    url: "https://std.samr.gov.cn/db/search/stdDBDetailed?id=D7B84B1B611D43CFE05397BE0A0AC19B",
-    note: "已定位DB4201/T641-2020官方登记，全文参数尚未复核。",
-  },
-  {
-    city: "昆山",
-    url: "https://www.ks.gov.cn/kss/swbmwj/202605/95caeb331df6468eab1b82bda0fb734f.shtml",
-    note: "2026官方通知已定位，P2–100年、t5–180min、r0.44。公式图片指数尚未可靠复核，不启用。",
-  },
-  {
-    city: "郑州",
-    url: "https://zrzyhghj.zhengzhou.gov.cn/tzgg/6928586.jhtml",
-    note: "2023官方发布通知已定位，DOC附件读取失败，尚不启用系数。",
-  },
-  {
-    city: "成都、西安、杭州、海口、三亚",
-    url: "https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2025/art_08015381a0b64e8d84f5a2f1a7509fee.html",
-    note: "尚未完成各地当前官方原文与系数核实；本链接是修订工作要求，不是这些城市的公式来源。",
-  },
-];
 export function resolveCityFormula(
   id: string,
   returnPeriod: number,
@@ -55,9 +18,12 @@ export function resolveCityFormula(
   if (!f) throw new Error("未知城市公式。");
   if (
     !Number.isFinite(returnPeriod) ||
+    returnPeriod <= 0 ||
     (f.discrete
       ? !f.periods.includes(returnPeriod)
-      : returnPeriod < f.periods[0] || returnPeriod > f.periods[1])
+      : f.periods.length > 0 &&
+        (returnPeriod < f.periods[0] || returnPeriod > f.periods[1])) ||
+    (f.periodMinExclusive && returnPeriod === f.periods[0])
   )
     throw new Error(
       "重现期超出该条目的收录范围：" +
@@ -68,13 +34,16 @@ export function resolveCityFormula(
     !Number.isFinite(durationMinutes) ||
     durationMinutes <= 0 ||
     (f.duration &&
-      (durationMinutes < f.duration[0] || durationMinutes > f.duration[1]))
+      ((f.duration[0] !== null && durationMinutes < f.duration[0]) ||
+        (f.duration[1] !== null && durationMinutes > f.duration[1]))) ||
+    (f.durationMinExclusive && durationMinutes === f.duration?.[0]) ||
+    (f.durationMaxExclusive && durationMinutes === f.duration?.[1])
   )
     throw new Error(
       "历时超出该公式范围：" + (f.duration?.join("–") ?? "正值") + " min。",
     );
   const v = f.table?.[returnPeriod];
-  const coefficients = v
+  let coefficients: NonNullable<FormulaTableEntry["coefficients"]> = v
     ? {
         formula: "direct" as const,
         a: v[0],
@@ -83,6 +52,32 @@ export function resolveCityFormula(
         unit: f.unit ?? "lsha",
       }
     : f.coefficients!;
+  if (f.calculationRule) {
+    if (
+      f.calculationRule === "海口总公式I" &&
+      (returnPeriod <= 1 || returnPeriod > 10 || durationMinutes > 180)
+    )
+      throw new Error("海口总公式I超出范围：5≤t≤180min、2≤P≤10年。");
+    if (
+      f.calculationRule === "海口总公式II" &&
+      (returnPeriod <= 1 || (durationMinutes <= 180 && returnPeriod <= 10))
+    )
+      throw new Error(
+        "海口总公式II超出范围：t≤180min时须P>10年，t>180min时按收录P范围。",
+      );
+    const period = f.calculationRule.startsWith("海口")
+      ? 1 / -Math.log1p(-1 / returnPeriod)
+      : returnPeriod;
+    coefficients = {
+      formula: "direct",
+      unit: coefficients.unit,
+      n: coefficients.n,
+      a: coefficients.a * (1 + coefficients.c! * Math.log10(period)),
+      b:
+        coefficients.b *
+        (f.calculationRule === "b乘P的0.031次方" ? returnPeriod ** 0.031 : 1),
+    };
+  }
   return {
     ...coefficients,
     returnPeriod,
@@ -133,6 +128,10 @@ export function generateCityChicago(
     duration: f.duration,
     periods: [...f.periods],
     note: f.note,
+    calculationRule: f.calculationRule,
+    periodMinExclusive: f.periodMinExclusive,
+    durationMinExclusive: f.durationMinExclusive,
+    durationMaxExclusive: f.durationMaxExclusive,
     origin: {
       kind: f.origin?.kind ?? "bundled",
       filename: f.origin?.filename ?? catalogueFilename,
@@ -148,7 +147,7 @@ export function generateCityChicago(
   result.warnings.push(
     f.origin?.kind === "imported"
       ? "该公式来自用户导入表格，未由工具核实官方原文；请自行核对来源、版本和适用范围。"
-      : "已核对收录版本原文，不保证实时最新；须核对项目所在地适用版本。" +
+      : "来源与版本按公式目录记录，含草案、论文或转载时以条目说明为准；使用前须核对当地现行要求。" +
           f.note,
     "芝加哥雨型为工具选用雨型，不能等同于地方指定设计雨型；r由用户确定。",
   );

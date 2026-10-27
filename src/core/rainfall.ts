@@ -26,9 +26,13 @@ export interface RainResult {
         attachment?: string;
       };
       scope: string;
-      duration: [number, number] | null;
+      duration: [number | null, number | null] | null;
       periods: number[];
       note: string;
+      calculationRule?: string;
+      periodMinExclusive?: boolean;
+      durationMinExclusive?: boolean;
+      durationMaxExclusive?: boolean;
       origin?: { kind: "bundled" | "imported"; filename?: string };
     };
     parameters: Record<string, string | number | undefined>;
